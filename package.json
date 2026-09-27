@@ -1,0 +1,24 @@
+{
+  "name": "calibr8",
+  "version": "0.1.0",
+  "description": "Offline hackathon judging portal. This package currently serves a health check and seeds four session tokens.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "seed": "node dist/db/seed.js",
+    "dev": "tsx src/server.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "fastify": "^4.28.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
