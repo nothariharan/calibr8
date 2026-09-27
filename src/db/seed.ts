@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { calibrate } from "../services/lsc.js";
 import { db, resetSchema } from "./index.js";
 
 interface Fixture {
@@ -83,6 +84,19 @@ const seed = db.transaction(() => {
     const raw = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
     insertScore.run(score.judge, score.project, JSON.stringify(criteria), raw, score.comment ?? "");
   }
+
+  const reviews = data.scores.map((score) => {
+    const values = Object.values(score.criteria ?? {});
+    const value = values.length ? values.reduce((sum, item) => sum + item, 0) / values.length : 0;
+    return { projectId: score.project, judgeId: score.judge, value };
+  });
+  const result = calibrate(
+    data.projects.map((project) => project.id).sort(),
+    data.judges.map((judge) => judge.id).sort(),
+    reviews,
+  );
+  const update = db.prepare("UPDATE scores SET normalized_score = ? WHERE project_id = ?");
+  for (const project of result.projects) update.run(project.calibrated, project.id);
 });
 
 seed();

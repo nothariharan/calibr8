@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "node dist/db/seed.js",
+    "calibrate:proof": "python scripts/calibrate.py fixtures.json",
     "dev": "tsx src/server.ts"
   },
   "license": "MIT",

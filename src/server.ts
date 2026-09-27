@@ -1,5 +1,6 @@
 import { canonicalJudgeId, currentUser } from "./auth.js";
 import { db, initSchema } from "./db/index.js";
+import { calibrate } from "./services/lsc.js";
 import { escapeHtml, shell } from "./ui.js";
 import Fastify from "fastify";
 
@@ -208,6 +209,73 @@ app.get("/api/export.csv", async (req, reply) => {
     .header("content-disposition", 'attachment; filename="calibr8-scores.csv"')
     .send([header, ...lines].join("\n"));
 });
+
+app.get("/api/calibrate", async () => liveCalibration());
+
+app.get("/standings", async (_req, reply) => {
+  const result = liveCalibration();
+  const titles = new Map(
+    (db.prepare("SELECT id, title FROM projects").all() as { id: string; title: string }[]).map((row) => [row.id, row.title]),
+  );
+  const names = new Map(
+    (db.prepare("SELECT id, name FROM users").all() as { id: string; name: string }[]).map((row) => [row.id, row.name]),
+  );
+  const projects = [...result.projects].sort((a, b) => a.calibratedRank - b.calibratedRank);
+  const judges = [...result.judges].sort((a, b) => a.bias - b.bias);
+  const projectRows = projects
+    .map(
+      (project) => `<tr>
+        <td class="num">${project.calibratedRank}</td>
+        <td><a href="/projects/${escapeHtml(project.id)}">${escapeHtml(titles.get(project.id) ?? project.id)}</a></td>
+        <td class="num">${project.rawAvg.toFixed(2)}</td>
+        <td class="num">${project.calibrated.toFixed(3)}</td>
+        <td class="num">${project.rankDelta > 0 ? "+" : ""}${project.rankDelta}</td>
+        <td class="num">${project.reviewCount}</td>
+      </tr>`,
+    )
+    .join("");
+  const judgeRows = judges
+    .map(
+      (judge) => `<tr>
+        <td>${escapeHtml(names.get(judge.id) ?? judge.id)}</td>
+        <td class="num">${judge.bias.toFixed(3)}</td>
+        <td class="num">${judge.rawMean.toFixed(2)}</td>
+        <td class="num">${judge.reviewCount}</td>
+      </tr>`,
+    )
+    .join("");
+  return reply.type("text/html").send(
+    shell(
+      "Standings",
+      `<table>
+        <thead><tr><th>Rank</th><th>Project</th><th>Raw</th><th>Calibrated</th><th>Shift</th><th>Reviews</th></tr></thead>
+        <tbody>${projectRows}</tbody>
+      </table>
+      <table>
+        <thead><tr><th>Judge</th><th>Bias</th><th>Raw mean</th><th>Reviews</th></tr></thead>
+        <tbody>${judgeRows}</tbody>
+      </table>`,
+      `mean ${result.globalMean.toFixed(2)}`,
+    ),
+  );
+});
+
+function liveCalibration() {
+  const projectIds = (db.prepare("SELECT id FROM projects ORDER BY id").all() as { id: string }[]).map((row) => row.id);
+  const judgeIds = (db.prepare("SELECT id FROM users WHERE role = 'judge' ORDER BY id").all() as { id: string }[]).map(
+    (row) => row.id,
+  );
+  const reviews = db.prepare("SELECT project_id, judge_id, raw_score FROM scores").all() as {
+    project_id: string;
+    judge_id: string;
+    raw_score: number;
+  }[];
+  return calibrate(
+    projectIds,
+    judgeIds,
+    reviews.map((review) => ({ projectId: review.project_id, judgeId: review.judge_id, value: review.raw_score })),
+  );
+}
 
 function csv(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
