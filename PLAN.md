@@ -21,7 +21,8 @@ The hackathon spec penalizes claiming a tier or bonus that `run.py` or a hand ju
 | This GitHub repository | Plan is on `main`. Step 1 is on `step/01-scaffold` and is verified. |
 | `docker compose up` in calibr8 | Verified. `evidence/01-scaffold.txt` records `GET /health` → 200 `{"ok":true,"service":"calibr8"}` and the four session tokens. |
 | `python run.py .dogfood.toml` | Verified. `acceptance-report.txt` shows seven PASS lines and `claimed T1 T2, verified T1 T2`. |
-| LSC solver, fact extractor, Reels UI, audit chain | Not started in this repo. |
+| LSC solver | Verified. `evidence/03-lsc.txt` is the stdout of `python scripts/calibrate.py fixtures.json`. The portal's `/api/calibrate` agrees on the top three: prj_34 4.191, prj_11 4.143, prj_25 4.039. |
+| Fact extractor, Reels UI, audit chain | Not started in this repo. |
 | Quadratic voting, Bradley-Terry, OpenAPI, SVG certificates | Deferred. Not in the critical path. |
 
 Current step: **3. LSC solver.** Acceptance is verified on `step/02-acceptance`.

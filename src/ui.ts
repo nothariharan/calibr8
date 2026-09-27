@@ -80,6 +80,7 @@ export function shell(title: string, main: string, meta = ""): string {
       <strong>calibr8</strong>
       <nav>
         <a href="/projects">Projects</a>
+        <a href="/standings">Standings</a>
         <a href="/projects/new">Submit</a>
       </nav>
       <span class="spacer"></span>
