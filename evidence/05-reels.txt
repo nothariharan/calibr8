@@ -1,0 +1,4 @@
+feed judge A 200
+feed judge B opening judge A 403
+commit 200 {"ok":true}
+own ballot lists prj_02 True

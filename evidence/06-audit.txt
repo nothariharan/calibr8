@@ -1,0 +1,2 @@
+LIVE {"verified":true,"scoreChainValid":true,"auditChainValid":true,"totalScores":126,"totalAuditEntries":1}
+TAMPERED {"verified":false,"scoreChainValid":false,"auditChainValid":true,"totalScores":126,"totalAuditEntries":1}

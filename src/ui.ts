@@ -81,12 +81,36 @@ export function shell(title: string, main: string, meta = ""): string {
       <nav>
         <a href="/projects">Projects</a>
         <a href="/standings">Standings</a>
-        <a href="/projects/new">Submit</a>
+        <a id="feed-link" href="/events/evt_01/judges/jdg_01/feed">Feed</a>
+        <a id="pair-link" href="/events/evt_01/judges/jdg_01/pairwise">Pairs</a>
+        <a href="/docs">Docs</a>
       </nav>
       <span class="spacer"></span>
+      <span class="roles">
+        <button type="button" data-session="">Out</button>
+        <button type="button" data-session="org_7f2a">Organizer</button>
+        <button type="button" data-session="jdg_a_91bc">Judge A</button>
+        <button type="button" data-session="jdg_b_44de">Judge B</button>
+        <button type="button" data-session="prt_2e88">Participant</button>
+      </span>
       <span class="meta">${meta}</span>
     </header>
-    <main>${main}</main>`,
+    <main>${main}</main>
+    <script>
+      const token = document.cookie.match(/(?:^|;\\s*)session=([^;]+)/)?.[1];
+      const judge = token === "jdg_b_44de" ? "jdg_02" : "jdg_01";
+      document.getElementById("feed-link").href = "/events/evt_01/judges/" + judge + "/feed";
+      document.getElementById("pair-link").href = "/events/evt_01/judges/" + judge + "/pairwise";
+      document.querySelectorAll("[data-session]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const value = button.getAttribute("data-session");
+          document.cookie = value
+            ? "session=" + value + "; path=/"
+            : "session=; Max-Age=0; path=/";
+          location.reload();
+        });
+      });
+    </script>`,
   );
 }
 

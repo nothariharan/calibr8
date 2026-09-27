@@ -64,8 +64,43 @@ export function initSchema(): void {
       raw_score REAL NOT NULL,
       normalized_score REAL NOT NULL DEFAULT 0,
       comment TEXT NOT NULL DEFAULT '',
+      prev_hash TEXT NOT NULL DEFAULT '',
+      hash TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (judge_id, project_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      prev_hash TEXT NOT NULL,
+      hash TEXT NOT NULL,
+      timestamp TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS votes (
+      voter_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      vote_value INTEGER NOT NULL,
+      credits INTEGER NOT NULL,
+      PRIMARY KEY (voter_id, project_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS voting_config (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      frozen INTEGER NOT NULL DEFAULT 1,
+      budget INTEGER NOT NULL DEFAULT 100
+    );
+
+    CREATE TABLE IF NOT EXISTS pairwise_comparisons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      judge_id TEXT NOT NULL REFERENCES users(id),
+      project_a_id TEXT NOT NULL REFERENCES projects(id),
+      project_b_id TEXT NOT NULL REFERENCES projects(id),
+      winner_id TEXT NOT NULL,
+      UNIQUE (judge_id, project_a_id, project_b_id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_scores_judge ON scores(judge_id);
@@ -77,6 +112,10 @@ export function initSchema(): void {
 export function resetSchema(): void {
   db.pragma("foreign_keys = OFF");
   db.exec(`
+    DROP TABLE IF EXISTS pairwise_comparisons;
+    DROP TABLE IF EXISTS votes;
+    DROP TABLE IF EXISTS voting_config;
+    DROP TABLE IF EXISTS audit_log;
     DROP TABLE IF EXISTS scores;
     DROP TABLE IF EXISTS projects;
     DROP TABLE IF EXISTS teams;

@@ -1,0 +1,5 @@
+docs 200 cdn=False
+certificate 200 demo=True
+vote {"ok":true,"credits":4,"remaining":96}
+sealed {"status":"BLIND_VOTING_ACTIVE","frozen":true}
+pairs 200

@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { appendAudit, rechainScores } from "../services/audit.js";
+import { ensureVotingConfig } from "../services/voting.js";
 import { calibrate } from "../services/lsc.js";
 import { db, resetSchema } from "./index.js";
 
@@ -100,6 +102,9 @@ const seed = db.transaction(() => {
 });
 
 seed();
+rechainScores();
+ensureVotingConfig();
+appendAudit("usr_organizer", "SEED", { source: "fixtures.json" });
 
 const counts = db.prepare(`
   SELECT

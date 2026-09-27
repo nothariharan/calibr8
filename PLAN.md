@@ -22,10 +22,12 @@ The hackathon spec penalizes claiming a tier or bonus that `run.py` or a hand ju
 | `docker compose up` in calibr8 | Verified. `evidence/01-scaffold.txt` records `GET /health` → 200 `{"ok":true,"service":"calibr8"}` and the four session tokens. |
 | `python run.py .dogfood.toml` | Verified. `acceptance-report.txt` shows seven PASS lines and `claimed T1 T2, verified T1 T2`. |
 | LSC solver | Verified. `evidence/03-lsc.txt` is the stdout of `python scripts/calibrate.py fixtures.json`. The portal's `/api/calibrate` agrees on the top three: prj_34 4.191, prj_11 4.143, prj_25 4.039. |
-| Fact extractor, Reels UI, audit chain | Not started in this repo. |
-| Quadratic voting, Bradley-Terry, OpenAPI, SVG certificates | Deferred. Not in the critical path. |
+| Fact extractor | Verified. `evidence/04-facts.txt` scans this repo and the Noog tree. Fixture rows are not given invented facts. |
+| Reels UI | Verified. `evidence/05-reels.txt`: Judge A gets 200, Judge B opening that feed gets 403, a committed ballot is listed on Judge A's scores. |
+| Audit chain | Verified. `evidence/06-audit.txt`: live chain valid, tampered copy invalid. |
+| Quadratic voting, Bradley-Terry, OpenAPI, SVG certificates | Exercised in `evidence/07-bonuses.txt`. The SVG seal is a demo HMAC whose key is in source. Pairwise ballots are accepted only inside a 0.05 calibrated gap. Public vote totals stay sealed. |
 
-Current step: **3. LSC solver.** Acceptance is verified on `step/02-acceptance`.
+Current step: **done through the bonus pass.** `.dogfood.toml` still claims only T1 and T2, because those are the tiers `run.py` verifies.
 
 A prior draft sits at `C:\Users\HARIHARAN\Desktop\Noog` (package name `reel-eval`, one local commit, no git remote). That tree is reference material only. It is not evidence that calibr8 works. Its README, `JUDGING.md`, `CONTINUE.md`, and acceptance write-up are not copied here. Uncommitted files in that draft (quadratic voting, pairwise, OpenAPI, certificates) stay out of calibr8 until the bonus phase, and only in the order below.
 
