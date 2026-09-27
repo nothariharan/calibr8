@@ -18,11 +18,13 @@ The hackathon spec penalizes claiming a tier or bonus that `run.py` or a hand ju
 
 | Item | State |
 |---|---|
-| This GitHub repository | Empty before this plan. No application code. |
-| `docker compose up` in calibr8 | Not started. |
+| This GitHub repository | Plan is on `main`. Step 1 is on `step/01-scaffold` and is verified. |
+| `docker compose up` in calibr8 | Verified. `evidence/01-scaffold.txt` records `GET /health` → 200 `{"ok":true,"service":"calibr8"}` and the four session tokens. |
 | `python run.py .dogfood.toml` | Not started. No `acceptance-report.txt`. |
 | LSC solver, fact extractor, Reels UI, audit chain | Not started in this repo. |
 | Quadratic voting, Bradley-Terry, OpenAPI, SVG certificates | Deferred. Not in the critical path. |
+
+Current step: **2. The seven acceptance checks.** Do not start it until this scaffold branch is the base you are building on.
 
 A prior draft sits at `C:\Users\HARIHARAN\Desktop\Noog` (package name `reel-eval`, one local commit, no git remote). That tree is reference material only. It is not evidence that calibr8 works. Its README, `JUDGING.md`, `CONTINUE.md`, and acceptance write-up are not copied here. Uncommitted files in that draft (quadratic voting, pairwise, OpenAPI, certificates) stay out of calibr8 until the bonus phase, and only in the order below.
 

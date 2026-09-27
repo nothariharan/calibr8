@@ -1,0 +1,17 @@
+Command:
+
+docker compose up --build -d
+
+Container log:
+
+seeded 4 sessions
+{"level":30,"time":1790500328809,"pid":1,"hostname":"85279f1a1062","msg":"Server listening at http://0.0.0.0:8080"}
+
+GET http://localhost:8080/health
+
+STATUS=200
+{"ok":true,"service":"calibr8"}
+
+Sessions in the container database:
+
+[{"token":"jdg_a_91bc","role":"judge"},{"token":"jdg_b_44de","role":"judge"},{"token":"org_7f2a","role":"organizer"},{"token":"prt_2e88","role":"participant"}]
