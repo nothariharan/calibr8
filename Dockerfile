@@ -9,6 +9,7 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY fixtures.json ./
+COPY assets ./assets
 COPY src ./src
 RUN npm run build
 

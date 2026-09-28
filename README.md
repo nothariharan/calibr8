@@ -24,11 +24,12 @@ Open http://localhost:8080. The header buttons set the fixture session cookie: O
 
 ## Pages
 
-The layout is a white page, 13px type, and tables. The header is one line.
+`GET /` is the public landing page. `/projects` is the workspace: an off-white canvas, a white sidebar, and project cards with inline SVG covers.
 
 | Path | What it shows |
 |---|---|
-| `/projects` | Every fixture project |
+| `/` | Landing page |
+| `/projects` | Workspace gallery of every fixture project |
 | `/standings` | Raw average, calibrated score, judge bias |
 | `/events/evt_01/judges/jdg_01/feed` | Judge A's track. J/K move, 0–5 rate, Enter saves |
 | `/events/evt_01/judges/jdg_01/pairwise` | Same-track pair. A ballot is accepted only when the calibrated gap is under 0.05 |

@@ -6,7 +6,10 @@ import { calibrate, type Calibration } from "./services/lsc.js";
 import { docsPage, openApiSpec } from "./services/openapi.js";
 import { bradleyTerry, nextMatchup, recordComparison } from "./services/pairwise.js";
 import { castQuadraticVote, publicResults, setVotingFrozen, voterStatus } from "./services/voting.js";
-import { escapeHtml, shell } from "./ui.js";
+import { landingPage, type LandingProject } from "./landing.js";
+import { chip, escapeHtml, shell, trackArt } from "./ui.js";
+import fs from "node:fs";
+import path from "node:path";
 import Fastify from "fastify";
 
 initSchema();
@@ -15,9 +18,41 @@ const app = Fastify({ logger: true });
 
 app.get("/health", async () => ({ ok: true, service: "calibr8" }));
 
-app.get("/", async (_req, reply) => reply.redirect("/projects"));
+app.get("/", async (req, reply) => {
+  const header = req.headers.cookie ?? "";
+  const match = header.match(/(?:^|;)\s*session=([^;]+)/);
+  const token = match ? decodeURIComponent(match[1].trim()) : "";
+  const labels: Record<string, string> = {
+    org_7f2a: "Organizer",
+    jdg_a_91bc: "Judge A",
+    jdg_b_44de: "Judge B",
+    prt_2e88: "Participant",
+  };
+  const rows = db.prepare(`
+    SELECT p.id, p.title, p.submitted_at, t.name AS track, tm.name AS team
+    FROM projects p
+    JOIN tracks t ON t.id = p.track_id
+    JOIN teams tm ON tm.id = p.team_id
+    WHERE p.id IN ('prj_34', 'prj_11', 'prj_25')
+  `).all() as LandingProject[];
+  const order = ["prj_34", "prj_11", "prj_25"];
+  rows.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  return reply.type("text/html").send(landingPage({ sessionLabel: labels[token] ?? null, projects: rows }));
+});
 
-app.get("/projects", async (_req, reply) => {
+app.get("/assets/*", async (req, reply) => {
+  const rel = (req.params as { "*": string })["*"];
+  if (!rel || rel.includes("..")) return reply.code(400).send("bad path");
+  const root = path.resolve(process.cwd(), "assets");
+  const file = path.resolve(root, rel);
+  if (!file.startsWith(root) || !fs.existsSync(file) || file.endsWith(".preview.png")) {
+    return reply.code(404).send("missing asset");
+  }
+  return reply.type("image/png").send(fs.readFileSync(file));
+});
+
+app.get("/projects", async (req, reply) => {
+  const view = (req.query as { view?: string }).view === "table" ? "table" : "cards";
   const rows = db.prepare(`
     SELECT p.id, p.title, p.summary, p.submitted_at, t.name AS track, tm.name AS team
     FROM projects p
@@ -26,26 +61,51 @@ app.get("/projects", async (_req, reply) => {
     ORDER BY p.submitted_at, p.id
   `).all() as { id: string; title: string; summary: string; submitted_at: string; track: string; team: string }[];
 
-  const body = rows
+  const cards = rows
+    .map(
+      (row) => `<a class="card" href="/projects/${escapeHtml(row.id)}">
+        <div class="cover">${trackArt(row.track)}</div>
+        <div class="card-body">
+          ${chip(row.track)}
+          <h2>${escapeHtml(row.title)}</h2>
+          <p>${escapeHtml(row.summary)}</p>
+          <p class="muted">${escapeHtml(row.team)} · ${escapeHtml(row.submitted_at.slice(0, 10))}</p>
+        </div>
+      </a>`,
+    )
+    .join("");
+  const table = rows
     .map(
       (row) => `<tr>
-        <td><a href="/projects/${escapeHtml(row.id)}">${escapeHtml(row.title)}</a></td>
-        <td>${escapeHtml(row.track)}</td>
+        <td><div class="thumb">${trackArt(row.track)}</div></td>
+        <td><a class="name" href="/projects/${escapeHtml(row.id)}">${escapeHtml(row.title)}</a><div class="muted">${escapeHtml(row.summary)}</div></td>
+        <td>${chip(row.track)}</td>
         <td>${escapeHtml(row.team)}</td>
         <td class="muted">${escapeHtml(row.submitted_at.slice(0, 10))}</td>
-        <td>${escapeHtml(row.summary)}</td>
       </tr>`,
     )
     .join("");
+  const body =
+    view === "table"
+      ? `<div class="panel"><table>
+          <thead><tr><th></th><th>Project</th><th>Track</th><th>Team</th><th>Submitted</th></tr></thead>
+          <tbody>${table}</tbody>
+        </table></div>`
+      : `<div class="cards">${cards}</div>`;
 
   return reply.type("text/html").send(
     shell(
       "Projects",
-      `<table>
-        <thead><tr><th>Project</th><th>Track</th><th>Team</th><th>Submitted</th><th>Summary</th></tr></thead>
-        <tbody>${body}</tbody>
-      </table>`,
-      `${rows.length} projects`,
+      `<main class="pad">
+          <div class="view-switch">
+          <div class="seg">
+            <a class="${view === "cards" ? "on" : ""}" href="/projects">Cards</a>
+            <a class="${view === "table" ? "on" : ""}" href="/projects?view=table">Table</a>
+          </div>
+        </div>
+        ${body}
+      </main>`,
+      `${rows.length} submissions`,
     ),
   );
 });
@@ -58,7 +118,7 @@ app.get("/projects/new", async (_req, reply) => {
   return reply.type("text/html").send(
     shell(
       "Submit",
-      `<form class="stack" id="submit-form">
+      `<main class="pad"><form class="panel side stack" id="submit-form">
         <h1>Submit</h1>
         <p class="muted">${escapeHtml(event?.name ?? "Event")} closes ${escapeHtml(event?.submissions_close ?? "unknown")}.</p>
         <input name="title" placeholder="Title" required ${closed ? "disabled" : ""}>
@@ -77,7 +137,7 @@ app.get("/projects/new", async (_req, reply) => {
           });
           document.getElementById("result").textContent = res.status + " " + await res.text();
         });
-      </script>`,
+      </script></main>`,
     ),
   );
 });
@@ -85,31 +145,40 @@ app.get("/projects/new", async (_req, reply) => {
 app.get("/projects/:id", async (req, reply) => {
   const { id } = req.params as { id: string };
   const project = db.prepare(`
-    SELECT p.id, p.title, p.summary, p.repo_url, p.submitted_at, t.name AS track, tm.name AS team
+    SELECT p.id, p.title, p.summary, p.repo_url, p.submitted_at, t.name AS track, t.id AS track_id, tm.name AS team
     FROM projects p
     JOIN tracks t ON t.id = p.track_id
     JOIN teams tm ON tm.id = p.team_id
     WHERE p.id = ?
   `).get(id) as
-    | { id: string; title: string; summary: string; repo_url: string; submitted_at: string; track: string; team: string }
+    | { id: string; title: string; summary: string; repo_url: string; submitted_at: string; track: string; track_id: string; team: string }
     | undefined;
   if (!project) return reply.code(404).send("project not found");
   return reply.type("text/html").send(
     shell(
       project.title,
-      `<div class="pane">
-        <h1>${escapeHtml(project.title)}</h1>
-        <p>${escapeHtml(project.summary)}</p>
-        <p class="muted">${escapeHtml(project.team)} · ${escapeHtml(project.track)} · ${escapeHtml(project.submitted_at)}</p>
-        <p><a href="${escapeHtml(project.repo_url)}">${escapeHtml(project.repo_url)}</a></p>
-        <p><a href="/projects/${escapeHtml(project.id)}/certificate">Demo seal</a></p>
-        <form class="row" id="vote-form">
+      `<main class="pad"><div class="record">
+        <section class="panel">
+          <div class="hero-art">${trackArt(project.track)}</div>
+          <div class="fields">
+            <div class="field"><span>Track</span><div>${chip(project.track)}</div></div>
+            <div class="field"><span>Team</span><div>${escapeHtml(project.team)}</div></div>
+            <div class="field"><span>Summary</span><div>${escapeHtml(project.summary)}</div></div>
+            <div class="field"><span>Submitted</span><div>${escapeHtml(project.submitted_at)}</div></div>
+            <div class="field"><span>Repository</span><div><a href="${escapeHtml(project.repo_url)}">${escapeHtml(project.repo_url)}</a></div></div>
+            <div class="field"><span>Record</span><div class="muted">${escapeHtml(project.id)} · ${escapeHtml(project.track_id)}</div></div>
+          </div>
+        </section>
+        <aside class="panel side">
+          <a href="/projects/${escapeHtml(project.id)}/certificate">Demo seal</a>
+          <form class="stack" id="vote-form">
           <input name="votes" type="number" min="0" max="10" value="0">
           <button type="submit">Set votes</button>
           <span id="vote-result" class="muted"></span>
         </form>
         <p class="muted">V votes cost V² credits. Public totals stay sealed until an organizer unfreezes them.</p>
-      </div>
+        </aside>
+      </div></main>
       <script>
         document.getElementById("vote-form").addEventListener("submit", async (event) => {
           event.preventDefault();
@@ -234,6 +303,80 @@ app.get("/api/export.csv", async (req, reply) => {
     .send([header, ...lines].join("\n"));
 });
 
+app.get("/records", async (req, reply) => {
+  const object = (req.query as { object?: string }).object ?? "projects";
+  const tabs = ["projects", "teams", "tracks", "judges", "scores"]
+    .map((name) => `<a class="${name === object ? "on" : ""}" href="/records?object=${name}">${name}</a>`)
+    .join("");
+  let table = "";
+  if (object === "teams") {
+    const rows = db.prepare("SELECT id, name, members_json FROM teams ORDER BY id").all() as {
+      id: string;
+      name: string;
+      members_json: string;
+    }[];
+    table = rows
+      .map(
+        (row) =>
+          `<tr><td class="muted">${escapeHtml(row.id)}</td><td class="name">${escapeHtml(row.name)}</td><td>${escapeHtml(row.members_json)}</td></tr>`,
+      )
+      .join("");
+    table = `<thead><tr><th>Id</th><th>Team</th><th>Members</th></tr></thead><tbody>${table}</tbody>`;
+  } else if (object === "tracks") {
+    const rows = db.prepare("SELECT id, name FROM tracks ORDER BY id").all() as { id: string; name: string }[];
+    table = rows
+      .map(
+        (row) =>
+          `<tr><td><div class="thumb">${trackArt(row.name)}</div></td><td class="muted">${escapeHtml(row.id)}</td><td>${chip(row.name)}</td></tr>`,
+      )
+      .join("");
+    table = `<thead><tr><th></th><th>Id</th><th>Track</th></tr></thead><tbody>${table}</tbody>`;
+  } else if (object === "judges") {
+    const rows = db.prepare("SELECT id, name, email, tracks_json FROM users WHERE role = 'judge' ORDER BY id").all() as {
+      id: string;
+      name: string;
+      email: string;
+      tracks_json: string;
+    }[];
+    table = rows
+      .map(
+        (row) =>
+          `<tr><td class="muted">${escapeHtml(row.id)}</td><td class="name">${escapeHtml(row.name)}</td><td>${escapeHtml(row.email)}</td><td class="muted">${escapeHtml(row.tracks_json)}</td></tr>`,
+      )
+      .join("");
+    table = `<thead><tr><th>Id</th><th>Judge</th><th>Email</th><th>Tracks</th></tr></thead><tbody>${table}</tbody>`;
+  } else if (object === "scores") {
+    const rows = db.prepare(`
+      SELECT s.id, s.judge_id, p.title, s.raw_score, s.normalized_score
+      FROM scores s JOIN projects p ON p.id = s.project_id
+      ORDER BY s.id LIMIT 80
+    `).all() as { id: number; judge_id: string; title: string; raw_score: number; normalized_score: number }[];
+    table = rows
+      .map(
+        (row) =>
+          `<tr><td class="num">${row.id}</td><td class="muted">${escapeHtml(row.judge_id)}</td><td>${escapeHtml(row.title)}</td><td class="num">${row.raw_score.toFixed(2)}</td><td class="num">${row.normalized_score.toFixed(3)}</td></tr>`,
+      )
+      .join("");
+    table = `<thead><tr><th class="num">Id</th><th>Judge</th><th>Project</th><th class="num">Raw</th><th class="num">Calibrated</th></tr></thead><tbody>${table}</tbody>`;
+  } else {
+    const rows = db.prepare(`
+      SELECT p.id, p.title, t.name AS track, tm.name AS team, p.repo_url
+      FROM projects p JOIN tracks t ON t.id = p.track_id JOIN teams tm ON tm.id = p.team_id
+      ORDER BY p.id
+    `).all() as { id: string; title: string; track: string; team: string; repo_url: string }[];
+    table = rows
+      .map(
+        (row) =>
+          `<tr><td><div class="thumb">${trackArt(row.track)}</div></td><td class="muted">${escapeHtml(row.id)}</td><td><a class="name" href="/projects/${escapeHtml(row.id)}">${escapeHtml(row.title)}</a></td><td>${chip(row.track)}</td><td>${escapeHtml(row.team)}</td></tr>`,
+      )
+      .join("");
+    table = `<thead><tr><th></th><th>Id</th><th>Project</th><th>Track</th><th>Team</th></tr></thead><tbody>${table}</tbody>`;
+  }
+  return reply.type("text/html").send(
+    shell("Records", `<main class="pad"><div class="tabs" style="margin-bottom:12px">${tabs}</div><div class="panel"><table>${table}</table></div></main>`, "source tables"),
+  );
+});
+
 app.get("/api/calibrate", async () => liveCalibration());
 
 app.get("/standings", async (_req, reply) => {
@@ -271,14 +414,20 @@ app.get("/standings", async (_req, reply) => {
   return reply.type("text/html").send(
     shell(
       "Standings",
-      `<table>
-        <thead><tr><th>Rank</th><th>Project</th><th>Raw</th><th>Calibrated</th><th>Shift</th><th>Reviews</th></tr></thead>
-        <tbody>${projectRows}</tbody>
-      </table>
-      <table>
-        <thead><tr><th>Judge</th><th>Bias</th><th>Raw mean</th><th>Reviews</th></tr></thead>
-        <tbody>${judgeRows}</tbody>
-      </table>`,
+      `<main class="pad">
+        <div class="panel">
+          <table>
+            <thead><tr><th>Rank</th><th>Project</th><th class="num">Raw</th><th class="num">Calibrated</th><th class="num">Shift</th><th class="num">Reviews</th></tr></thead>
+            <tbody>${projectRows}</tbody>
+          </table>
+        </div>
+        <div class="panel" style="margin-top:16px">
+          <table>
+            <thead><tr><th>Judge</th><th class="num">Bias</th><th class="num">Raw mean</th><th class="num">Reviews</th></tr></thead>
+            <tbody>${judgeRows}</tbody>
+          </table>
+        </div>
+      </main>`,
       `mean ${result.globalMean.toFixed(2)}`,
     ),
   );
@@ -436,7 +585,9 @@ app.get("/api/audit/verify", async () => verifyDatabase());
 
 app.get("/api/openapi.json", async () => openApiSpec);
 
-app.get("/docs", async (_req, reply) => reply.type("text/html").send(shell("Docs", docsPage(openApiSpec))));
+app.get("/docs", async (_req, reply) =>
+  reply.type("text/html").send(shell("Docs", `<main class="pad"><div class="panel">${docsPage(openApiSpec)}</div></main>`)),
+);
 
 app.get("/projects/:id/certificate", async (req, reply) => {
   const data = certificateFor((req.params as { id: string }).id);
