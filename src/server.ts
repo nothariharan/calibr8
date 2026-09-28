@@ -164,7 +164,21 @@ app.get("/projects/new", async (_req, reply) => {
   );
 });
 
+app.get("/feed", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/events/evt_01/judges/jdg_01/feed");
+  return reply.type("text/html; charset=utf-8").send(spa);
+});
+
+app.get("/pairs", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/events/evt_01/judges/jdg_01/pairwise");
+  return reply.type("text/html; charset=utf-8").send(spa);
+});
+
 app.get("/projects/:id", async (req, reply) => {
+  const spa = readSpaIndex();
+  if (spa) return reply.type("text/html; charset=utf-8").send(spa);
   const { id } = req.params as { id: string };
   const project = db.prepare(`
     SELECT p.id, p.title, p.summary, p.repo_url, p.submitted_at, t.name AS track, t.id AS track_id, tm.name AS team
@@ -326,6 +340,8 @@ app.get("/api/export.csv", async (req, reply) => {
 });
 
 app.get("/records", async (req, reply) => {
+  const spa = readSpaIndex();
+  if (spa) return reply.type("text/html; charset=utf-8").send(spa);
   const object = (req.query as { object?: string }).object ?? "projects";
   const tabs = ["projects", "teams", "tracks", "judges", "scores"]
     .map((name) => `<a class="${name === object ? "on" : ""}" href="/records?object=${name}">${name}</a>`)
@@ -402,6 +418,8 @@ app.get("/records", async (req, reply) => {
 app.get("/api/calibrate", async () => liveCalibration());
 
 app.get("/standings", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (spa) return reply.type("text/html; charset=utf-8").send(spa);
   const result = liveCalibration();
   const titles = new Map(
     (db.prepare("SELECT id, title FROM projects").all() as { id: string; title: string }[]).map((row) => [row.id, row.title]),

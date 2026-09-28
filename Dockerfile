@@ -9,9 +9,14 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY fixtures.json ./
-COPY assets ./assets
 COPY src ./src
 RUN npm run build
+
+COPY web/package.json web/package-lock.json ./web/
+RUN npm ci --prefix web
+COPY web/index.html web/tsconfig.json web/vite.config.ts ./web/
+COPY web/src ./web/src
+RUN npm run build --prefix web
 
 ENV NODE_ENV=production
 ENV PORT=8080
