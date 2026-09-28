@@ -117,9 +117,8 @@ export function Landing() {
                         </div>
                         <span className="chip">{project.track}</span>
                         <strong>{project.title}</strong>
-                        <span>
-                          {project.team} · {formatDate(project.submitted_at)}
-                        </span>
+                        <span className="meta">{project.team}</span>
+                        <span className="meta">{formatDate(project.submitted_at)}</span>
                       </Link>
                     ))}
                   </div>
@@ -314,7 +313,7 @@ function WorkspaceSection() {
                   {HERO_PROJECTS.map((project) => (
                     <li key={project.id}>
                       <span>{project.title}</span>
-                      <em>—</em>
+                      <em>{project.track}</em>
                     </li>
                   ))}
                 </ul>
