@@ -7,6 +7,7 @@ import { docsPage, openApiSpec } from "./services/openapi.js";
 import { bradleyTerry, nextMatchup, recordComparison } from "./services/pairwise.js";
 import { castQuadraticVote, publicResults, setVotingFrozen, voterStatus } from "./services/voting.js";
 import { landingPage, type LandingProject } from "./landing.js";
+import { distContentType, distPathBlocked, injectProjectTitles, readSpaIndex, resolveDistFile } from "./spa.js";
 import { chip, escapeHtml, shell, trackArt } from "./ui.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -19,6 +20,8 @@ const app = Fastify({ logger: true });
 app.get("/health", async () => ({ ok: true, service: "calibr8" }));
 
 app.get("/", async (req, reply) => {
+  const spa = readSpaIndex();
+  if (spa !== null) return reply.type("text/html; charset=utf-8").send(spa);
   const header = req.headers.cookie ?? "";
   const match = header.match(/(?:^|;)\s*session=([^;]+)/);
   const token = match ? decodeURIComponent(match[1].trim()) : "";
@@ -43,6 +46,8 @@ app.get("/", async (req, reply) => {
 app.get("/assets/*", async (req, reply) => {
   const rel = (req.params as { "*": string })["*"];
   if (!rel || rel.includes("..")) return reply.code(400).send("bad path");
+  const built = resolveDistFile(path.join("assets", rel));
+  if (built) return reply.type(distContentType(built)).send(fs.readFileSync(built));
   const root = path.resolve(process.cwd(), "assets");
   const file = path.resolve(root, rel);
   if (!file.startsWith(root) || !fs.existsSync(file) || file.endsWith(".preview.png")) {
@@ -51,7 +56,24 @@ app.get("/assets/*", async (req, reply) => {
   return reply.type("image/png").send(fs.readFileSync(file));
 });
 
+// Vite's default asset directory is `/assets`, which collides with the PNG route.
+// The client must set Vite `build.assetsDir` to `static` and `base` to `/`.
+// This handler reads `web/dist/static`. A file missing from `web/dist` falls
+// through on `/assets/*` to the repository PNGs.
+app.get("/static/*", async (req, reply) => {
+  const rel = (req.params as { "*": string })["*"];
+  if (!rel || rel.includes("..")) return reply.code(400).send("bad path");
+  const file = resolveDistFile(path.join("static", rel));
+  if (!file) return reply.code(404).send("missing asset");
+  return reply.type(distContentType(file)).send(fs.readFileSync(file));
+});
+
 app.get("/projects", async (req, reply) => {
+  const spa = readSpaIndex();
+  if (spa !== null) {
+    const titles = db.prepare("SELECT title FROM projects ORDER BY submitted_at, id").all() as { title: string }[];
+    return reply.type("text/html; charset=utf-8").send(injectProjectTitles(spa, titles.map((row) => row.title)));
+  }
   const view = (req.query as { view?: string }).view === "table" ? "table" : "cards";
   const rows = db.prepare(`
     SELECT p.id, p.title, p.summary, p.submitted_at, t.name AS track, tm.name AS team
@@ -676,6 +698,202 @@ function storeCalibration(result: Calibration): void {
   for (const project of result.projects) update.run(project.calibrated, project.id);
   rechainScores();
 }
+
+const SESSION_TOKENS = new Set(["org_7f2a", "jdg_a_91bc", "jdg_b_44de", "prt_2e88"]);
+
+function userForToken(token: string): SessionUser | null {
+  const row = db
+    .prepare(
+      `SELECT u.id, u.name, u.role
+       FROM sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.token = ?`,
+    )
+    .get(token) as SessionUser | undefined;
+  return row ?? null;
+}
+
+function parsedJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return {};
+  }
+}
+
+app.get("/api/session", async (req) => ({ user: currentUser(req) }));
+
+app.post("/api/session", async (req, reply) => {
+  const token = (req.body as { token?: unknown } | null)?.token;
+  if (typeof token !== "string") return reply.code(400).send({ error: "unknown token" });
+  if (token === "") {
+    reply.header("Set-Cookie", "session=; Path=/; SameSite=Lax; Max-Age=0");
+    return { user: null };
+  }
+  if (!SESSION_TOKENS.has(token)) return reply.code(400).send({ error: "unknown token" });
+  reply.header("Set-Cookie", `session=${token}; Path=/; SameSite=Lax`);
+  return { user: userForToken(token) };
+});
+
+app.get("/api/projects", async () => {
+  const projects = db.prepare(`
+    SELECT p.id, p.title, p.summary, p.submitted_at, t.name AS track, tm.name AS team
+    FROM projects p
+    JOIN tracks t ON t.id = p.track_id
+    JOIN teams tm ON tm.id = p.team_id
+    ORDER BY p.submitted_at, p.id
+  `).all();
+  return { projects };
+});
+
+app.get("/api/projects/:id", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const project = db.prepare(`
+    SELECT p.id, p.title, p.summary, p.repo_url, p.submitted_at, p.facts_json, t.name AS track, tm.name AS team
+    FROM projects p
+    JOIN tracks t ON t.id = p.track_id
+    JOIN teams tm ON tm.id = p.team_id
+    WHERE p.id = ?
+  `).get(id) as
+    | {
+        id: string;
+        title: string;
+        summary: string;
+        repo_url: string;
+        submitted_at: string;
+        facts_json: string;
+        track: string;
+        team: string;
+      }
+    | undefined;
+  if (!project) return reply.code(404).send({ error: "project not found" });
+  return {
+    id: project.id,
+    title: project.title,
+    summary: project.summary,
+    repo_url: project.repo_url,
+    submitted_at: project.submitted_at,
+    track: project.track,
+    team: project.team,
+    facts_json: parsedJson(project.facts_json),
+  };
+});
+
+app.get("/api/standings", async () => {
+  const result = liveCalibration();
+  const titles = new Map(
+    (db.prepare("SELECT id, title FROM projects").all() as { id: string; title: string }[]).map((row) => [row.id, row.title]),
+  );
+  const names = new Map(
+    (db.prepare("SELECT id, name FROM users").all() as { id: string; name: string }[]).map((row) => [row.id, row.name]),
+  );
+  const projects = result.projects
+    .filter((project) => project.reviewCount > 0)
+    .sort((a, b) => b.calibrated - a.calibrated || a.id.localeCompare(b.id))
+    .map((project) => ({
+      id: project.id,
+      title: titles.get(project.id) ?? project.id,
+      rawMean: project.rawAvg,
+      calibrated: project.calibrated,
+    }));
+  return {
+    globalMean: result.globalMean,
+    projects,
+    judges: result.judges.map((judge) => ({
+      id: judge.id,
+      name: names.get(judge.id) ?? judge.id,
+      bias: judge.bias,
+    })),
+  };
+});
+
+app.get("/api/feed", async (req, reply) => {
+  const user = requireRole(req, reply, ["judge"]);
+  if (!user) return;
+  const tracks = JSON.parse(
+    (db.prepare("SELECT tracks_json FROM users WHERE id = ?").get(user.id) as { tracks_json: string }).tracks_json,
+  ) as string[];
+  const projects = tracks.length
+    ? (db.prepare(`
+        SELECT p.id, p.title, p.summary, p.repo_url, t.name AS track, tm.name AS team,
+               s.raw_score AS stars
+        FROM projects p
+        JOIN tracks t ON t.id = p.track_id
+        JOIN teams tm ON tm.id = p.team_id
+        LEFT JOIN scores s ON s.project_id = p.id AND s.judge_id = ?
+        WHERE p.track_id IN (${tracks.map(() => "?").join(",")})
+        ORDER BY p.id
+      `).all(user.id, ...tracks) as {
+        id: string;
+        title: string;
+        summary: string;
+        repo_url: string;
+        track: string;
+        team: string;
+        stars: number | null;
+      }[])
+    : [];
+  return { projects };
+});
+
+app.get("/api/pairwise/next", async (req, reply) => {
+  const user = requireRole(req, reply, ["judge"]);
+  if (!user) return;
+  return { matchup: nextMatchup(user.id) };
+});
+
+app.get("/api/records", async (req, reply) => {
+  const object = (req.query as { object?: string }).object ?? "";
+  if (object === "teams") {
+    const rows = db.prepare("SELECT id, name, members_json FROM teams ORDER BY id").all();
+    return { object, rows };
+  }
+  if (object === "tracks") {
+    const rows = db.prepare("SELECT id, name FROM tracks ORDER BY id").all();
+    return { object, rows };
+  }
+  if (object === "judges") {
+    const rows = db.prepare("SELECT id, name, email, tracks_json FROM users WHERE role = 'judge' ORDER BY id").all();
+    return { object, rows };
+  }
+  if (object === "scores") {
+    const rows = db.prepare(`
+      SELECT s.id, s.judge_id, p.title, s.raw_score, s.normalized_score
+      FROM scores s JOIN projects p ON p.id = s.project_id
+      ORDER BY s.id LIMIT 80
+    `).all();
+    return { object, rows };
+  }
+  if (object === "projects") {
+    const rows = db.prepare(`
+      SELECT p.id, p.title, t.name AS track, tm.name AS team
+      FROM projects p JOIN tracks t ON t.id = p.track_id JOIN teams tm ON tm.id = p.team_id
+      ORDER BY p.id
+    `).all();
+    return { object, rows };
+  }
+  return reply.code(400).send({ error: "unknown object" });
+});
+
+app.setNotFoundHandler((req, reply) => {
+  if (req.method === "GET" || req.method === "HEAD") {
+    let pathname = "";
+    try {
+      pathname = decodeURIComponent((req.url.split("?")[0] ?? "/")).replace(/^\/+/, "");
+    } catch {
+      pathname = "";
+    }
+    if (pathname && !pathname.includes("..") && !distPathBlocked(pathname)) {
+      const file = resolveDistFile(pathname);
+      if (file) return reply.type(distContentType(file)).send(fs.readFileSync(file));
+    }
+  }
+  const url = req.url.split("?")[0] ?? req.url;
+  return reply.code(404).send({
+    message: `Route ${req.method}:${url} not found`,
+    error: "Not Found",
+    statusCode: 404,
+  });
+});
 
 const port = Number(process.env.PORT ?? 8080);
 await app.listen({ port, host: "0.0.0.0" });
