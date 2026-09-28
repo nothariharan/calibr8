@@ -1,7 +1,7 @@
 {
   "name": "calibr8",
   "version": "0.1.0",
-  "description": "Offline hackathon judging portal. This package currently serves a health check and seeds four session tokens.",
+  "description": "Offline hackathon judging portal.",
   "type": "module",
   "private": true,
   "scripts": {

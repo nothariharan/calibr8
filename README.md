@@ -24,17 +24,20 @@ Open http://localhost:8080. The header buttons set the fixture session cookie: O
 
 ## Pages
 
-The layout is a white page, 13px type, and tables. The header is one line.
+The UI is a Vite + React app in `web/`, built to `web/dist` and served by the same Fastify process. Line drawings are SVG generated in the browser. Fastify, SQLite, and the acceptance routes stay on port 8080.
 
 | Path | What it shows |
 |---|---|
-| `/projects` | Every fixture project |
+| `/` | Landing page |
+| `/projects` | Gallery of every fixture project |
 | `/standings` | Raw average, calibrated score, judge bias |
-| `/events/evt_01/judges/jdg_01/feed` | Judge A's track. J/K move, 0–5 rate, Enter saves |
-| `/events/evt_01/judges/jdg_01/pairwise` | Same-track pair. A ballot is accepted only when the calibrated gap is under 0.05 |
+| `/feed` | Signed-in judge's track. Stars 0–5 save that judge's ballot |
+| `/pairs` | Same-track pair. A ballot is accepted only when the calibrated gap is under 0.05 |
 | `/docs` | OpenAPI 3.1 paths, served by this process |
 | `/projects/prj_34/certificate` | SVG demo seal |
 | `/verify` | Recomputes that seal |
+
+`/events/evt_01/judges/jdg_01/feed` is still the server route that returns 403 when another judge opens it.
 
 The seal key is the constant `DEMO_SEAL_KEY` in `src/services/certificate.ts`. Anyone with the source can recompute it.
 
