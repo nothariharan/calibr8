@@ -278,6 +278,13 @@ export type HomeParticipant = {
   criteria: Rubric | null;
   raw: number | null;
   calibrated: number | null;
+  facts?: {
+    scanned?: boolean;
+    databaseDrivers: string[];
+    validators: string[];
+    testRunner: string | null;
+    testFiles: string[];
+  };
 };
 
 export type HomeEvent = {
