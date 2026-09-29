@@ -498,21 +498,72 @@ app.get("/standings", async (_req, reply) => {
   );
 });
 
-function liveCalibration() {
-  const projectIds = (db.prepare("SELECT id FROM projects ORDER BY id").all() as { id: string }[]).map((row) => row.id);
-  const judgeIds = (db.prepare("SELECT id FROM users WHERE role = 'judge' ORDER BY id").all() as { id: string }[]).map(
-    (row) => row.id,
-  );
-  const reviews = db.prepare("SELECT project_id, judge_id, raw_score FROM scores").all() as {
-    project_id: string;
-    judge_id: string;
-    raw_score: number;
-  }[];
+function eventCalibration(eventId: string): Calibration | null {
+  const projectIds = (
+    db.prepare(
+      `SELECT DISTINCT p.id
+       FROM projects p
+       JOIN scores s ON s.project_id = p.id
+       WHERE p.event_id = ?
+       ORDER BY p.id`,
+    ).all(eventId) as { id: string }[]
+  ).map((row) => row.id);
+  if (!projectIds.length) return null;
+  const judgeIds = (
+    db.prepare(
+      `SELECT DISTINCT s.judge_id AS id
+       FROM scores s
+       JOIN projects p ON p.id = s.project_id
+       WHERE p.event_id = ?
+       ORDER BY s.judge_id`,
+    ).all(eventId) as { id: string }[]
+  ).map((row) => row.id);
+  const reviews = db.prepare(
+    `SELECT s.project_id, s.judge_id, s.raw_score
+     FROM scores s
+     JOIN projects p ON p.id = s.project_id
+     WHERE p.event_id = ?`,
+  ).all(eventId) as { project_id: string; judge_id: string; raw_score: number }[];
   return calibrate(
     projectIds,
     judgeIds,
     reviews.map((review) => ({ projectId: review.project_id, judgeId: review.judge_id, value: review.raw_score })),
   );
+}
+
+function liveCalibration(): Calibration {
+  const events = db.prepare("SELECT id FROM events ORDER BY id").all() as { id: string }[];
+  const parts = events
+    .map((event) => eventCalibration(event.id))
+    .filter((part): part is Calibration => part != null);
+  if (parts.length === 0) return { globalMean: 0, projects: [], judges: [] };
+  if (parts.length === 1) return parts[0];
+  const projects = parts.flatMap((part) => part.projects);
+  const byRaw = [...projects].sort((a, b) => b.rawAvg - a.rawAvg || a.id.localeCompare(b.id));
+  const byCalibrated = [...projects].sort((a, b) => b.calibrated - a.calibrated || a.id.localeCompare(b.id));
+  const rawRank = new Map(byRaw.map((project, index) => [project.id, index + 1]));
+  const calibratedRank = new Map(byCalibrated.map((project, index) => [project.id, index + 1]));
+  const reviews = parts.reduce((sum, part) => sum + part.projects.reduce((inner, project) => inner + project.reviewCount, 0), 0);
+  const weighted = parts.reduce(
+    (sum, part) => sum + part.globalMean * part.projects.reduce((inner, project) => inner + project.reviewCount, 0),
+    0,
+  );
+  const judges = new Map<string, Calibration["judges"][number]>();
+  for (const part of parts) {
+    for (const judge of part.judges) {
+      const existing = judges.get(judge.id);
+      if (!existing || judge.reviewCount > existing.reviewCount) judges.set(judge.id, judge);
+    }
+  }
+  return {
+    globalMean: reviews ? weighted / reviews : 0,
+    projects: projects.map((project) => {
+      const rawPosition = rawRank.get(project.id) ?? project.rawRank;
+      const calibratedPosition = calibratedRank.get(project.id) ?? project.calibratedRank;
+      return { ...project, rawRank: rawPosition, calibratedRank: calibratedPosition, rankDelta: rawPosition - calibratedPosition };
+    }),
+    judges: [...judges.values()],
+  };
 }
 
 function csv(value: string): string {
@@ -544,7 +595,8 @@ app.post("/api/judge/scores", async (req, reply) => {
       raw_score = excluded.raw_score
   `).run(user.id, body.project_id, criteriaJson, raw);
   rechainScores();
-  storeCalibration(liveCalibration());
+  const eventResult = eventCalibration(project.event_id);
+  if (eventResult) storeCalibration(eventResult);
   appendAudit(user.id, "SCORE_SUBMITTED", { projectId: body.project_id, criteria, raw });
   return { ok: true, raw };
 });
@@ -617,10 +669,19 @@ app.post("/api/pairwise/compare", async (req, reply) => {
   const body = req.body as { project_a_id?: string; project_b_id?: string; winner_id?: string };
   if (!body.project_a_id || !body.project_b_id || !body.winner_id) return reply.code(400).send({ error: "missing projects" });
   const scores = db.prepare(`
-    SELECT project_id, MAX(normalized_score) AS calibrated
-    FROM scores WHERE project_id IN (?, ?) GROUP BY project_id
-  `).all(body.project_a_id, body.project_b_id) as { project_id: string; calibrated: number }[];
-  if (scores.length === 2 && Math.abs(scores[0].calibrated - scores[1].calibrated) >= 0.05) {
+    SELECT p.id, p.event_id, MAX(s.normalized_score) AS calibrated
+    FROM projects p
+    LEFT JOIN scores s ON s.project_id = p.id
+    WHERE p.id IN (?, ?)
+    GROUP BY p.id
+  `).all(body.project_a_id, body.project_b_id) as { id: string; event_id: string; calibrated: number | null }[];
+  if (scores.length !== 2 || scores[0].event_id !== scores[1].event_id) {
+    return reply.code(400).send({ error: "a comparison stays inside one hackathon" });
+  }
+  if (scores[0].calibrated == null || scores[1].calibrated == null) {
+    return reply.code(400).send({ error: "both projects need a calibrated score" });
+  }
+  if (Math.abs(scores[0].calibrated - scores[1].calibrated) >= 0.05) {
     return reply.code(400).send({ error: "this pair is outside the 0.05 tie band" });
   }
   const result = recordComparison(user.id, body.project_a_id, body.project_b_id, body.winner_id);

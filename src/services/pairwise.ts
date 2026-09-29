@@ -10,6 +10,7 @@ export interface Matchup {
 
 interface ProjectCard {
   id: string;
+  eventId: string;
   title: string;
   summary: string;
   track: string;
@@ -20,11 +21,12 @@ export function nextMatchup(judgeId: string): Matchup | null {
   const tracks = judgeTracks(judgeId);
   if (!tracks.length) return null;
   const projects = db.prepare(`
-    SELECT p.id, p.title, p.summary, t.name AS track, COALESCE(MAX(s.normalized_score), 0) AS calibrated
+    SELECT p.id, p.event_id AS eventId, p.title, p.summary, t.name AS track, MAX(s.normalized_score) AS calibrated
     FROM projects p
     JOIN tracks t ON t.id = p.track_id
-    LEFT JOIN scores s ON s.project_id = p.id
+    JOIN scores s ON s.project_id = p.id
     WHERE p.track_id IN (${tracks.map(() => "?").join(",")})
+      AND s.normalized_score IS NOT NULL
     GROUP BY p.id
     ORDER BY p.id
   `).all(...tracks) as ProjectCard[];
@@ -39,7 +41,7 @@ export function nextMatchup(judgeId: string): Matchup | null {
   let closest: Matchup | null = null;
   for (let i = 0; i < projects.length; i++) {
     for (let j = i + 1; j < projects.length; j++) {
-      if (projects[i].track !== projects[j].track) continue;
+      if (projects[i].eventId !== projects[j].eventId || projects[i].track !== projects[j].track) continue;
       const [a, b] = [projects[i], projects[j]].sort((left, right) => left.id.localeCompare(right.id));
       if (compared.has(`${a.id}|${b.id}`)) continue;
       const gap = Math.abs(a.calibrated - b.calibrated);
