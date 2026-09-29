@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { useSession } from "../session";
+import { hostedDemo, useSession } from "../session";
 import { Mark } from "./Mark";
 import { Approach } from "./landing/Approach";
 import { BuiltFor } from "./landing/BuiltFor";
@@ -20,7 +20,13 @@ const LINKS = [
 
 export function Landing() {
   const { session } = useSession();
-  const start = session.ready && session.signedIn ? "/dashboard" : "/signin";
+  const start = hostedDemo()
+    ? session.signedIn
+      ? "/demo"
+      : "/signin"
+    : session.ready && session.signedIn
+      ? "/dashboard"
+      : "/signin";
   const page = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {

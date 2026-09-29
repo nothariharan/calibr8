@@ -1,0 +1,10 @@
+node_modules
+/dist
+web/node_modules
+/data
+/evidence
+/samples
+/demo
+*.db
+*.db-wal
+*.db-shm

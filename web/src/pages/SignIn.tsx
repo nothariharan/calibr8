@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Mark } from "../components/Mark";
-import { useSession } from "../session";
+import { hostedDemo, useSession } from "../session";
 
 export function SignIn() {
   const { session, signIn, signOut } = useSession();
@@ -86,7 +86,8 @@ export function SignIn() {
         {session.signedIn && session.name ? (
           <p className="signed">
             Signed in as {session.name}
-            {session.eventName ? ` · ${session.eventName}` : ""}. <Link to="/dashboard">Open your hackathon</Link>
+            {session.eventName ? ` · ${session.eventName}` : ""}.{" "}
+            <Link to={hostedDemo() ? "/demo" : "/dashboard"}>{hostedDemo() ? "Open the judge reel" : "Open your hackathon"}</Link>
           </p>
         ) : null}
         <form className="signin-form" onSubmit={(event) => void submit(event)}>

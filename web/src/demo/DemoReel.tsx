@@ -1,8 +1,10 @@
 import { LayoutGrid } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { LiveMark } from "../components/LiveMark";
 import { Mark } from "../components/Mark";
-import { useSession } from "../session";
+import { ScoreBoard, type BoardRow } from "../components/ScoreBoard";
+import { hostedDemo, useSession } from "../session";
 import {
   CRITERIA,
   HACKATHON,
@@ -63,7 +65,21 @@ export function DemoReel() {
 
   const place = Math.min(active, PROJECTS.length - 1) + 1;
   const scored = scoredCount(demo, judge.id);
-  const back = session.signedIn ? "/dashboard" : "/";
+  const boardRows: BoardRow[] = PROJECTS.flatMap((project) => {
+    const ballot = ballotFor(demo, judge.id, project.id);
+    if (!ballot) return [];
+    return [
+      {
+        id: project.id,
+        title: project.title,
+        functionality: ballot.functionality,
+        quality: ballot.quality,
+        innovation: ballot.innovation,
+      },
+    ];
+  });
+  const boardReady = boardRows.length === PROJECTS.length;
+  const back = hostedDemo() || !session.signedIn ? "/" : "/dashboard";
 
   activeRef.current = active;
 
@@ -112,7 +128,7 @@ export function DemoReel() {
     if (index >= 0) setActive(index);
     alignSlide(root, el);
     setScrollTo(null);
-  }, [scrollTo]);
+  }, [scrollTo, boardReady]);
 
   useEffect(() => {
     function onKey(eventKey: KeyboardEvent) {
@@ -151,6 +167,7 @@ export function DemoReel() {
       return;
     }
     setStoredId(projectId);
+    setScrollTo("board");
   }
 
   return (
@@ -203,6 +220,11 @@ export function DemoReel() {
                     {place} of {PROJECTS.length}
                   </span>
                   <span className="reel-scored">{scored} scored</span>
+                  {boardReady ? (
+                    <button className="text-link reel-board-link" type="button" onClick={() => setScrollTo("board")}>
+                      Your scores
+                    </button>
+                  ) : null}
                 </p>
               </div>
               <div className="reel" ref={scrollerRef}>
@@ -222,6 +244,7 @@ export function DemoReel() {
                     />
                   </section>
                 ))}
+                {boardReady ? <ScoreBoard rows={boardRows} /> : null}
               </div>
             </div>
           </div>
@@ -274,6 +297,7 @@ function ProjectSlide({
         <div className="reel-identity">
           <div className="reel-glyph">
             <img src={`/demo/${project.id}.png`} alt="" />
+            <LiveMark />
           </div>
           <div>
             <p className="reel-kicker">{project.mark}</p>

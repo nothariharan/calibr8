@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { asApiError, getStandings, postScore, type HomeEvent, type HomeParticipant, type Rubric } from "../api";
+import { LiveMark } from "./LiveMark";
+import { ScoreBoard, type BoardRow } from "./ScoreBoard";
 import { Empty } from "./Status";
 import { TrackGlyph } from "./TrackGlyph";
 
@@ -127,6 +129,11 @@ export function JudgeReel({
     focusIndex >= 0 && focusIndex < event.participants.length - 1 ? event.participants[focusIndex + 1] : null;
   const place = focusId ? Math.max(1, focusIndex + 1) : Math.min(active, Math.max(shown.length - 1, 0)) + 1;
   const scored = event.participants.filter((item) => item.criteria != null).length;
+  const boardRows: BoardRow[] = shown.flatMap((project) => {
+    if (!project.criteria) return [];
+    return [{ id: project.id, title: project.title, ...project.criteria }];
+  });
+  const boardReady = role === "judge" && !focusId && shown.length > 0 && boardRows.length === shown.length;
 
   activeRef.current = active;
   idsRef.current = event.participants.map((item) => item.id);
@@ -224,6 +231,7 @@ export function JudgeReel({
       return;
     }
     setStoredId(projectId);
+    if (!focusId) setScrollTo("board");
   }
 
   if (!shown.length) {
@@ -254,6 +262,11 @@ export function JudgeReel({
           <Link className="text-link" to="/standings">
             Standings
           </Link>
+          {boardReady ? (
+            <button className="text-link reel-board-link" type="button" onClick={() => setScrollTo("board")}>
+              Your scores
+            </button>
+          ) : null}
         </p>
       </div>
       <div className="reel" ref={scrollerRef}>
@@ -281,6 +294,7 @@ export function JudgeReel({
           </section>
         );
       })}
+      {boardReady ? <ScoreBoard rows={boardRows} /> : null}
       </div>
     </div>
   );
@@ -425,6 +439,7 @@ function ProjectPane({
         <div className="reel-identity">
           <div className="reel-glyph">
             <TrackGlyph track={project.track} />
+            <LiveMark />
           </div>
           <div>
             <p className="reel-kicker">{project.track}</p>

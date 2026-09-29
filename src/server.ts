@@ -18,6 +18,17 @@ initSchema();
 
 const app = Fastify({ logger: true });
 
+app.addHook("onSend", async (req, reply, payload) => {
+  const url = (req.url.split("?")[0] ?? "").replace(/\/+$/, "") || "/";
+  const type = String(reply.getHeader("content-type") ?? "");
+  if (url.startsWith("/static/")) {
+    reply.header("Cache-Control", "public, max-age=31536000, immutable");
+  } else if (type.includes("text/html")) {
+    reply.header("Cache-Control", "no-cache");
+  }
+  return payload;
+});
+
 app.get("/health", async () => ({ ok: true, service: "calibr8" }));
 
 app.get("/", async (req, reply) => {
@@ -589,8 +600,9 @@ function csv(value: string): string {
 }
 
 app.post("/api/judge/scores", async (req, reply) => {
-  const user = requireRole(req, reply, ["judge"]);
-  if (!user) return;
+  const user = currentUser(req);
+  if (!user) return reply.code(401).send({ error: "authentication required" });
+  if (user.role !== "judge") return reply.code(403).send({ error: "Sign in as a judge to store a ballot." });
   const body = req.body as { project_id?: string; stars?: number; criteria?: unknown; comment?: unknown };
   const criteria = rubricFromBody(body);
   if (!body.project_id || !criteria) {
