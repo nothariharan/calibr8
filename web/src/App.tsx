@@ -20,6 +20,7 @@ const router = createBrowserRouter([
     children: [
       { path: "/dashboard", element: <Dashboard />, handle: { title: "Hackathons" } },
       { path: "/dashboard/:eventId", element: <Dashboard />, handle: { title: "Hackathon" } },
+      { path: "/dashboard/:eventId/projects/:projectId", element: <Dashboard />, handle: { title: "Project" } },
       { path: "/projects", element: <Projects />, handle: { title: "Hackathon" } },
       { path: "/projects/:id", element: <ProjectDetail />, handle: { title: "Project" } },
       { path: "/standings", element: <Standings />, handle: { title: "Standings" } },

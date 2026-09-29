@@ -30,7 +30,7 @@ function num(value: number | null): string {
 }
 
 export function Dashboard() {
-  const { eventId } = useParams();
+  const { eventId, projectId } = useParams();
   const { session } = useSession();
   usePageTitle(eventId ? "Hackathon" : "Hackathons");
   const [home, setHome] = useState<HomePayload | null>(null);
@@ -73,7 +73,7 @@ export function Dashboard() {
             <h2>{session.name}</h2>
             <p className="muted">
               {role === "judge"
-                ? "Hackathons you are assigned to. Open one to see its projects."
+                ? "Hackathons you are assigned to."
                 : role === "organizer"
                   ? "Hackathons you run. Open one to see its participants and standings."
                   : "Hackathons that list your email on a team."}
@@ -115,6 +115,68 @@ export function Dashboard() {
   const event = home.events.find((item) => item.id === eventId);
   if (!event) return <Empty>This hackathon is not on your account.</Empty>;
 
+  const project = projectId ? event.participants.find((item) => item.id === projectId) : undefined;
+  if (projectId) {
+    if (!project) return <Empty>This project is not in your hackathon.</Empty>;
+    return (
+      <div className="desk">
+        <p>
+          <Link to={`/dashboard/${event.id}`}>{event.name}</Link>
+        </p>
+        {notice ? <p className="form-error">{notice}</p> : null}
+        <article className="panel stack">
+          <p className="eyebrow">{project.track}</p>
+          <h2>{project.title}</h2>
+          <p className="muted">
+            {project.team}
+            {project.summary ? ` · ${project.summary}` : ""}
+          </p>
+          {role === "judge" ? (
+            <ScoreCard
+              participant={project}
+              onSaved={async () => {
+                setNotice(null);
+                await reload();
+              }}
+              onError={(message) => setNotice(message)}
+            />
+          ) : null}
+        </article>
+      </div>
+    );
+  }
+
+  if (role === "judge" || role === "participant") {
+    return (
+      <div className="desk">
+        <p>
+          <Link to="/dashboard">All hackathons</Link>
+        </p>
+        <header className="event-head">
+          <div>
+            <h2>{event.name}</h2>
+            <p className="muted">{event.tracks.map((track) => track.name).join(", ")}</p>
+          </div>
+          <p className="count">{event.participants.length} projects</p>
+        </header>
+        {event.participants.length ? (
+          <div className="hack-cards">
+            {event.participants.map((item) => (
+              <Link className="hack-card" key={item.id} to={`/dashboard/${event.id}/projects/${item.id}`}>
+                <p className="eyebrow">{item.track}</p>
+                <h2>{item.title}</h2>
+                <p>{item.team}</p>
+                {role === "judge" ? <p className="muted">{item.criteria ? "Scored" : "Not scored"}</p> : null}
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <Empty>No projects in this hackathon.</Empty>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="desk">
       <p>
@@ -132,8 +194,8 @@ export function Dashboard() {
         }}
         onError={(message) => setNotice(message)}
       />
-      {role === "judge" || role === "organizer" ? <EventStandings event={event} /> : null}
-      {role === "organizer" && home.audit ? <AuditField audit={home.audit} /> : null}
+      <EventStandings event={event} />
+      {home.audit ? <AuditField audit={home.audit} /> : null}
     </div>
   );
 }
@@ -153,9 +215,6 @@ function EventBlock({
   onChange: () => Promise<void>;
   onError: (message: string) => void;
 }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const open = event.participants.find((row) => row.id === selected) ?? null;
-
   return (
     <section className="panel stack">
       <div className="event-head">
@@ -187,15 +246,9 @@ function EventBlock({
             </thead>
             <tbody>
               {event.participants.map((row) => (
-                <tr key={row.id} className={selected === row.id ? "on" : ""}>
+                <tr key={row.id}>
                   <td>
-                    {role === "judge" ? (
-                      <button type="button" className="linkish" onClick={() => setSelected(row.id)}>
-                        {row.title}
-                      </button>
-                    ) : (
-                      <Link to={`/projects/${row.id}`}>{row.title}</Link>
-                    )}
+                    <Link to={`/dashboard/${event.id}/projects/${row.id}`}>{row.title}</Link>
                     <div className="muted">{row.summary}</div>
                   </td>
                   <td>
@@ -213,15 +266,6 @@ function EventBlock({
       ) : (
         <p className="muted">No participants in this hackathon yet.</p>
       )}
-      {role === "judge" && open ? (
-        <ScoreCard
-          participant={open}
-          onSaved={async () => {
-            await onChange();
-          }}
-          onError={onError}
-        />
-      ) : null}
       {role === "organizer" ? (
         <OrganizerForms
           event={event}
@@ -269,7 +313,7 @@ function ScoreCard({
   return (
     <form className="score-card" onSubmit={(event) => void save(event)}>
       <strong>{participant.title}</strong>
-      <p className="muted">0 is broken. 3 works. 5 is exceptional. The raw score sent to calibration is the mean of the three.</p>
+      <p className="muted">0 is broken. 3 works. 5 is exceptional.</p>
       {RUBRIC.map(([key, label]) => (
         <fieldset key={key}>
           <legend>{label}</legend>

@@ -6,7 +6,7 @@ Offline hackathon judging portal. One container, SQLite, no hosted accounts.
 docker compose up --build
 ```
 
-Open http://localhost:8080/signin. Each seeded person signs in with their email. The password is the part before `@`, with dots written as hyphens. Tomas Varga is `tomas.varga@example.org` / `tomas-varga` and lands on the Accessibility feed for Sample Hack 2026. Wei Lindqvist is `wei.lindqvist@example.org` / `wei-lindqvist`. The organizer is `organizer@example.org` / `organizer`. The participant is `participant@example.org` / `participant`.
+Open http://localhost:8080/signin. Each seeded person signs in with their email. The password is the part before `@`, with dots written as hyphens. Tomas Varga is `tomas.varga@example.org` / `tomas-varga`. He sees the hackathons he is assigned to, then the projects in that hackathon, then scores one project on functionality, quality, and innovation. Wei Lindqvist is `wei.lindqvist@example.org` / `wei-lindqvist`. The organizer is `organizer@example.org` / `organizer` and sees standings inside a hackathon. The participant is `participant@example.org` / `participant`. That email is not on a fixture team.
 
 ## What is verified
 
@@ -24,21 +24,31 @@ Open http://localhost:8080/signin. Each seeded person signs in with their email.
 
 ## Pages
 
-The UI is a Vite + React app in `web/`, built to `web/dist` and served by the same Fastify process. Line drawings are SVG generated in the browser. Fastify, SQLite, and the acceptance routes stay on port 8080.
+The UI is a Vite + React app in `web/`, built to `web/dist` and served by the same Fastify process. Fastify, SQLite, and the acceptance routes stay on port 8080.
 
 | Path | What it shows |
 |---|---|
 | `/` | Landing page |
-| `/projects` | Gallery of every fixture project |
-| `/standings` | Raw average, calibrated score, judge bias |
-| `/feed` | Signed-in judge's track. Stars 0–5 save that judge's ballot |
-| `/pairs` | Same-track pair. A ballot is accepted only when the calibrated gap is under 0.05 |
+| `/signin` | Email and password |
+| `/dashboard` | Hackathons for the signed-in account |
+| `/dashboard/:eventId` | Projects in that hackathon. Organizers also see standings and the hash chain |
+| `/dashboard/:eventId/projects/:projectId` | One project. A judge scores it here |
 | `/docs` | OpenAPI 3.1 paths, served by this process |
 | `/projects/prj_34/certificate` | SVG demo seal |
 | `/verify` | Recomputes that seal |
 
-`/events/evt_01/judges/jdg_01/feed` is still the server route that returns 403 when another judge opens it.
+`GET /projects` still returns the fixture titles for the acceptance checker. `/events/evt_01/judges/jdg_01/feed` still returns 403 when another judge opens it.
 
-The seal key is the constant `DEMO_SEAL_KEY` in `src/services/certificate.ts`. Anyone with the source can recompute it.
+A judge does not see the calibrated ranking. That list is on the organizer's hackathon page.
 
-`.dogfood.toml` claims T1 and T2 only. Those are the tiers `run.py` can verify.
+The seal key is the constant `DEMO_SEAL_KEY` in `src/services/certificate.ts`. Anyone with the source can recompute it. It is a demo seal, not a credential.
+
+## Beyond the checker
+
+`run.py` only verifies T1 and T2. `.dogfood.toml` claims those two tiers and nothing else. These extra surfaces are in the repo for a manual look. They are not claimed as verified tiers.
+
+- Calibration is the ridge least-squares script above. A live ballot stores functionality, quality, and innovation. The raw score is their mean, then the same solver runs again.
+- Pairwise ballots are stored only when the calibrated gap is under 0.05. The route is `/api/pairwise/compare`.
+- Quadratic votes use an integer V from 0 to 10, cost V², budget 100. While frozen, public results return `BLIND_VOTING_ACTIVE`.
+- The score hash is SHA-256 of the previous hash, the judge, the project, the criteria, and the raw score. `evidence/06-audit.txt` records a valid chain and a tampered copy.
+- Facts come from dependency manifests. They are not terms in the calibration equations.

@@ -177,6 +177,12 @@ app.get("/dashboard", async (_req, reply) => {
   return reply.type("text/html; charset=utf-8").send(spa);
 });
 
+app.get("/dashboard/:eventId/projects/:projectId", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/signin");
+  return reply.type("text/html; charset=utf-8").send(spa);
+});
+
 app.get("/dashboard/:eventId", async (_req, reply) => {
   const spa = readSpaIndex();
   if (!spa) return reply.redirect("/signin");
