@@ -7,6 +7,14 @@ export const RUBRIC = ["functionality", "quality", "innovation"] as const;
 export type RubricName = (typeof RUBRIC)[number];
 export type Rubric = Record<RubricName, number>;
 
+export type HomeFacts = {
+  scanned: boolean;
+  databaseDrivers: string[];
+  validators: string[];
+  testRunner: string | null;
+  testFiles: string[];
+};
+
 export type HomeParticipant = {
   id: string;
   title: string;
@@ -15,6 +23,7 @@ export type HomeParticipant = {
   track: string;
   trackId: string;
   emails: string[];
+  facts: HomeFacts;
   criteria: Rubric | null;
   raw: number | null;
   calibrated: number | null;
@@ -62,6 +71,7 @@ type ProjectRow = {
   track: string;
   team: string;
   members_json: string;
+  facts_json: string;
 };
 
 type ScoreRow = {
@@ -116,6 +126,28 @@ function parseStringList(json: string): string[] {
     return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
   } catch {
     return [];
+  }
+}
+
+function readFacts(json: string | null | undefined): HomeFacts {
+  const empty: HomeFacts = { scanned: false, databaseDrivers: [], validators: [], testRunner: null, testFiles: [] };
+  if (!json) return empty;
+  try {
+    const value = JSON.parse(json) as Record<string, unknown>;
+    const strings = (key: string): string[] => {
+      const raw = value[key];
+      return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+    };
+    const runner = value.testRunner;
+    return {
+      scanned: value.scanned === true,
+      databaseDrivers: strings("databaseDrivers"),
+      validators: strings("validators"),
+      testRunner: typeof runner === "string" ? runner : null,
+      testFiles: strings("testFiles"),
+    };
+  } catch {
+    return empty;
   }
 }
 
@@ -198,7 +230,7 @@ export function loadHome(userId: string, role: string): HomePayload {
   const judgeById = new Map(judges.map((judge) => [judge.id, judge]));
   const projects = db
     .prepare(
-      `SELECT p.id, p.event_id, p.title, p.summary, p.track_id, t.name AS track, tm.name AS team, tm.members_json
+      `SELECT p.id, p.event_id, p.title, p.summary, p.track_id, p.facts_json, t.name AS track, tm.name AS team, tm.members_json
        FROM projects p
        JOIN tracks t ON t.id = p.track_id
        JOIN teams tm ON tm.id = p.team_id
@@ -253,6 +285,7 @@ export function loadHome(userId: string, role: string): HomePayload {
           track: project.track,
           trackId: project.track_id,
           emails: parseStringList(project.members_json),
+          facts: readFacts(project.facts_json),
           criteria: role === "judge" && own ? readRubric(own.criteria_json) : null,
           raw: rawPool.length ? rawPool.reduce((sum, score) => sum + score.raw_score, 0) / rawPool.length : null,
           calibrated,
@@ -261,11 +294,13 @@ export function loadHome(userId: string, role: string): HomePayload {
     };
   });
 
-  const visible = homeEvents.filter((event) => {
-    if (role === "organizer") return true;
-    if (role === "judge") return event.tracks.length > 0;
-    return event.participants.length > 0;
-  });
+  const visible = homeEvents
+    .filter((event) => {
+      if (role === "organizer") return true;
+      if (role === "judge") return event.tracks.length > 0;
+      return event.participants.length > 0;
+    })
+    .sort((a, b) => Number(a.closed) - Number(b.closed));
 
   const chain = role === "participant" ? null : verifyDatabase();
   const recent =

@@ -4,6 +4,7 @@ import { hashPassword, fixturePassword } from "../auth.js";
 import { appendAudit, rechainScores } from "../services/audit.js";
 import { ensureVotingConfig } from "../services/voting.js";
 import { calibrate } from "../services/lsc.js";
+import { seedHarborDemo } from "./demo-harbor.js";
 import { db, resetSchema } from "./index.js";
 
 interface Fixture {
@@ -114,6 +115,8 @@ const seed = db.transaction(() => {
   );
   const update = db.prepare("UPDATE scores SET normalized_score = ? WHERE project_id = ?");
   for (const project of result.projects) update.run(project.calibrated, project.id);
+
+  seedHarborDemo();
 });
 
 seed();

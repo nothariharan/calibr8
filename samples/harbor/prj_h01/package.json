@@ -1,0 +1,9 @@
+{
+  "name": "caption-latch",
+  "dependencies": {
+    "zod": "3.24.2"
+  },
+  "devDependencies": {
+    "vitest": "2.1.8"
+  }
+}

@@ -18,6 +18,8 @@ COPY web/index.html web/tsconfig.json web/vite.config.ts ./web/
 COPY web/src ./web/src
 RUN npm run build --prefix web
 
+COPY samples ./samples
+
 ENV NODE_ENV=production
 ENV PORT=8080
 

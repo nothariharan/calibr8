@@ -1,0 +1,10 @@
+{
+  "name": "voice-queue",
+  "dependencies": {
+    "mongodb": "6.12.0",
+    "joi": "17.13.3"
+  },
+  "devDependencies": {
+    "jest": "29.7.0"
+  }
+}
