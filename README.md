@@ -6,7 +6,7 @@ Offline hackathon judging portal. One container, SQLite, no hosted accounts.
 docker compose up --build
 ```
 
-Open http://localhost:8080. The header buttons set the fixture session cookie: Organizer, Judge A, Judge B, Participant.
+Open http://localhost:8080/signin. Each seeded person signs in with their email. The password is the part before `@`, with dots written as hyphens. Tomas Varga is `tomas.varga@example.org` / `tomas-varga` and lands on the Accessibility feed for Sample Hack 2026. Wei Lindqvist is `wei.lindqvist@example.org` / `wei-lindqvist`. The organizer is `organizer@example.org` / `organizer`. The participant is `participant@example.org` / `participant`.
 
 ## What is verified
 

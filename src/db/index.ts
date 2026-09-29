@@ -30,7 +30,8 @@ export function initSchema(): void {
       email TEXT UNIQUE,
       name TEXT NOT NULL,
       role TEXT NOT NULL CHECK (role IN ('visitor', 'participant', 'judge', 'organizer', 'admin')),
-      tracks_json TEXT NOT NULL DEFAULT '[]'
+      tracks_json TEXT NOT NULL DEFAULT '[]',
+      password_hash TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
@@ -47,6 +48,7 @@ export function initSchema(): void {
 
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id),
       team_id TEXT NOT NULL REFERENCES teams(id),
       track_id TEXT NOT NULL REFERENCES tracks(id),
       title TEXT NOT NULL,
@@ -54,6 +56,13 @@ export function initSchema(): void {
       repo_url TEXT NOT NULL,
       submitted_at TEXT NOT NULL,
       facts_json TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS judge_assignments (
+      event_id TEXT NOT NULL REFERENCES events(id),
+      judge_id TEXT NOT NULL REFERENCES users(id),
+      tracks_json TEXT NOT NULL,
+      PRIMARY KEY (event_id, judge_id)
     );
 
     CREATE TABLE IF NOT EXISTS scores (
@@ -117,6 +126,7 @@ export function resetSchema(): void {
     DROP TABLE IF EXISTS voting_config;
     DROP TABLE IF EXISTS audit_log;
     DROP TABLE IF EXISTS scores;
+    DROP TABLE IF EXISTS judge_assignments;
     DROP TABLE IF EXISTS projects;
     DROP TABLE IF EXISTS teams;
     DROP TABLE IF EXISTS sessions;

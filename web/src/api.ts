@@ -153,7 +153,7 @@ function normalizeStandingProject(value: unknown): StandingProject | null {
     id,
     title: pickStr(value, ["title", "name"]) || id,
     calibratedRank: pickNum(value, ["calibratedRank", "calibrated_rank", "rank"]),
-    rawAvg: pickNum(value, ["rawAvg", "raw_avg", "raw", "raw_average"]),
+    rawAvg: pickNum(value, ["rawAvg", "raw_avg", "raw", "raw_average", "rawMean", "raw_mean"]),
     calibrated: pickNum(value, ["calibrated", "calibrated_score", "normalized_score"]),
     rankDelta: pickNum(value, ["rankDelta", "rank_delta", "shift"]),
     reviewCount: pickNum(value, ["reviewCount", "review_count", "reviews", "reviews_count"]),
@@ -258,10 +258,87 @@ export async function getFeed(): Promise<FeedItem[]> {
     .filter((row): row is FeedItem => row !== null);
 }
 
-export async function postScore(projectId: string, stars: number): Promise<void> {
+export type Rubric = { functionality: number; quality: number; innovation: number };
+
+export async function postScore(projectId: string, criteria: Rubric): Promise<void> {
   await request<unknown>("/api/judge/scores", {
     method: "POST",
-    body: JSON.stringify({ project_id: projectId, stars }),
+    body: JSON.stringify({ project_id: projectId, criteria }),
+  });
+}
+
+export type HomeParticipant = {
+  id: string;
+  title: string;
+  summary: string;
+  team: string;
+  track: string;
+  trackId: string;
+  emails: string[];
+  criteria: Rubric | null;
+  raw: number | null;
+  calibrated: number | null;
+};
+
+export type HomeEvent = {
+  id: string;
+  name: string;
+  submissionsClose: string;
+  closed: boolean;
+  tracks: { id: string; name: string }[];
+  judges: { email: string; name: string; tracks: string[] }[];
+  participants: HomeParticipant[];
+};
+
+export type HomeAudit = {
+  verified: boolean;
+  scoreChainValid: boolean;
+  auditChainValid: boolean;
+  totalScores: number;
+  totalAuditEntries: number;
+  recent: { actorId: string; action: string; hash: string; timestamp: string }[];
+};
+
+export type HomePayload = {
+  role: string;
+  tracks: { id: string; name: string }[];
+  judges: { email: string; name: string }[];
+  events: HomeEvent[];
+  audit: HomeAudit | null;
+};
+
+export async function getDashboard(): Promise<HomePayload> {
+  return request<HomePayload>("/api/dashboard");
+}
+
+export async function createHackathon(name: string, submissionsClose: string): Promise<void> {
+  await request<unknown>("/api/events", {
+    method: "POST",
+    body: JSON.stringify({ name, submissions_close: submissionsClose }),
+  });
+}
+
+export async function addHackathonParticipant(
+  eventId: string,
+  input: { teamName: string; emails: string; title: string; summary: string; trackId: string; repoUrl: string },
+): Promise<void> {
+  await request<unknown>(`/api/events/${encodeURIComponent(eventId)}/participants`, {
+    method: "POST",
+    body: JSON.stringify({
+      team_name: input.teamName,
+      emails: input.emails.split(/[,\s]+/).filter(Boolean),
+      title: input.title,
+      summary: input.summary,
+      track_id: input.trackId,
+      repo_url: input.repoUrl,
+    }),
+  });
+}
+
+export async function assignHackathonJudge(eventId: string, email: string, tracks: string[]): Promise<void> {
+  await request<unknown>(`/api/events/${encodeURIComponent(eventId)}/judges`, {
+    method: "POST",
+    body: JSON.stringify({ email, tracks }),
   });
 }
 
@@ -326,18 +403,50 @@ export async function postCompare(projectAId: string, projectBId: string, winner
 export type SessionPayload = {
   id?: string;
   name?: string;
+  email?: string;
   role?: string;
-  label?: string;
+  eventName?: string;
+  tracks?: string[];
+  next?: string;
 };
 
 export async function getSession(): Promise<SessionPayload> {
   const data = await request<unknown>("/api/session");
+  return readSession(data);
+}
+
+export async function login(email: string, password: string): Promise<SessionPayload> {
+  const data = await request<unknown>("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  return readSession(data);
+}
+
+export async function logout(): Promise<void> {
+  await request<unknown>("/api/session", {
+    method: "POST",
+    body: JSON.stringify({ token: "" }),
+  });
+}
+
+function readSession(data: unknown): SessionPayload {
   if (!isRecord(data)) return {};
-  const user = isRecord(data.user) ? data.user : data;
+  const user = isRecord(data.user) ? data.user : null;
+  if (!user) return {};
+  const event = isRecord(user.event) ? user.event : null;
+  const tracks = Array.isArray(user.tracks)
+    ? user.tracks
+        .map((track) => (isRecord(track) ? pickStr(track, ["name", "id"]) : ""))
+        .filter(Boolean)
+    : [];
   return {
     id: pickStr(user, ["id", "user_id"]) || undefined,
     name: pickStr(user, ["name"]) || undefined,
+    email: pickStr(user, ["email"]) || undefined,
     role: pickStr(user, ["role"]) || undefined,
-    label: pickStr(user, ["label"]) || undefined,
+    eventName: event ? pickStr(event, ["name"]) || undefined : undefined,
+    tracks,
+    next: pickStr(data, ["next"]) || undefined,
   };
 }

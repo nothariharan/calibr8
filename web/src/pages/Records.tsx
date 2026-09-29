@@ -31,7 +31,7 @@ export function Records() {
     };
   }, [object]);
 
-  const organizer = session.role === "organizer" || session.token === "org_7f2a";
+  const organizer = session.role === "organizer";
 
   return (
     <div className="stack-lg">

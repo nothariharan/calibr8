@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { hashPassword, fixturePassword } from "../auth.js";
 import { appendAudit, rechainScores } from "../services/audit.js";
 import { ensureVotingConfig } from "../services/voting.js";
 import { calibrate } from "../services/lsc.js";
@@ -43,30 +44,44 @@ const seed = db.transaction(() => {
   for (const track of data.tracks) insertTrack.run(track.id, track.name);
 
   const insertUser = db.prepare(
-    "INSERT INTO users (id, email, name, role, tracks_json) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO users (id, email, name, role, tracks_json, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
   );
-  insertUser.run("usr_organizer", "organizer@example.org", "Organizer", "organizer", "[]");
-  insertUser.run("usr_participant", "participant@example.org", "Participant", "participant", "[]");
-  for (const judge of data.judges) {
-    insertUser.run(judge.id, judge.email, judge.name, "judge", JSON.stringify(judge.tracks ?? []));
-  }
+  const addUser = (id: string, email: string, name: string, role: string, tracks: string[]) => {
+    const password = fixturePassword(email);
+    insertUser.run(id, email, name, role, JSON.stringify(tracks), hashPassword(password, email));
+  };
+  addUser("usr_organizer", "organizer@example.org", "Organizer", "organizer", []);
+  addUser("usr_participant", "participant@example.org", "Participant", "participant", []);
+  for (const judge of data.judges) addUser(judge.id, judge.email, judge.name, "judge", judge.tracks ?? []);
 
+  const checkerToken: Record<string, string> = {
+    usr_organizer: "org_7f2a",
+    usr_participant: "prt_2e88",
+    jdg_01: "jdg_a_91bc",
+    jdg_02: "jdg_b_44de",
+  };
   const insertSession = db.prepare("INSERT INTO sessions (token, user_id, role) VALUES (?, ?, ?)");
-  insertSession.run("org_7f2a", "usr_organizer", "organizer");
-  insertSession.run("jdg_a_91bc", "jdg_01", "judge");
-  insertSession.run("jdg_b_44de", "jdg_02", "judge");
-  insertSession.run("prt_2e88", "usr_participant", "participant");
+  const users = db.prepare("SELECT id, role FROM users").all() as { id: string; role: string }[];
+  for (const user of users) insertSession.run(checkerToken[user.id] ?? `sess_${user.id}`, user.id, user.role);
 
   const insertTeam = db.prepare("INSERT INTO teams (id, name, members_json) VALUES (?, ?, ?)");
   for (const team of data.teams) insertTeam.run(team.id, team.name, JSON.stringify(team.members ?? []));
 
+  const insertAssignment = db.prepare(
+    "INSERT INTO judge_assignments (event_id, judge_id, tracks_json) VALUES (?, ?, ?)",
+  );
+  for (const judge of data.judges) {
+    insertAssignment.run(data.event.id, judge.id, JSON.stringify(judge.tracks ?? []));
+  }
+
   const insertProject = db.prepare(`
-    INSERT INTO projects (id, team_id, track_id, title, summary, repo_url, submitted_at, facts_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, '{}')
+    INSERT INTO projects (id, event_id, team_id, track_id, title, summary, repo_url, submitted_at, facts_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}')
   `);
   for (const project of data.projects) {
     insertProject.run(
       project.id,
+      data.event.id,
       project.team,
       project.track,
       project.title,

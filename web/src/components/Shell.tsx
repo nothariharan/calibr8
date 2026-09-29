@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, GitCompare, LayoutGrid, List, Table } from "lucide-react";
+import { LayoutGrid, Table } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { NavLink, Outlet, useMatches } from "react-router-dom";
 import { Mark } from "./Mark";
@@ -16,11 +16,8 @@ export function usePageTitle(title: string) {
 }
 
 const NAV = [
-  { to: "/projects", label: "Projects", icon: LayoutGrid },
-  { to: "/standings", label: "Standings", icon: BarChart3 },
-  { to: "/records", label: "Records", icon: Table },
-  { to: "/feed", label: "Judge feed", icon: List },
-  { to: "/pairs", label: "Pairs", icon: GitCompare },
+  { to: "/dashboard", label: "Hackathons", icon: LayoutGrid, roles: ["judge", "organizer", "participant"] },
+  { to: "/records", label: "Records", icon: Table, roles: ["organizer"] },
 ];
 
 export function Shell() {
@@ -48,7 +45,7 @@ export function Shell() {
             calibr8
           </NavLink>
           <nav className="side-nav">
-            {NAV.map((item) => {
+            {NAV.filter((item) => (session.role ? item.roles.includes(session.role) : false)).map((item) => {
               const Icon = item.icon;
               return (
                 <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "on" : "")}>
@@ -57,17 +54,13 @@ export function Shell() {
                 </NavLink>
               );
             })}
-            <a href="/docs">
-              <BookOpen size={16} strokeWidth={1.7} aria-hidden="true" />
-              Docs
-            </a>
           </nav>
           <SessionButtons />
         </aside>
         <div className="workspace">
           <header className="topbar">
             <h1>{title}</h1>
-            {session.signedIn && session.label ? <p className="role">{session.label}</p> : null}
+            {session.signedIn && session.eventName ? <p className="role">{session.eventName}</p> : null}
           </header>
           <div className="workspace-body">
             <Outlet />

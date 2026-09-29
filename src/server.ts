@@ -1,7 +1,8 @@
-import { canonicalJudgeId, currentUser, type SessionUser } from "./auth.js";
+import { canonicalJudgeId, currentUser, verifyPassword, type SessionUser } from "./auth.js";
 import { db, initSchema } from "./db/index.js";
 import { appendAudit, rechainScores, verifyDatabase } from "./services/audit.js";
 import { certificateFor, certificateSvg, checkSeal } from "./services/certificate.js";
+import { addParticipant, assignJudge, assignmentLabel, createEvent, judgeCovers, loadHome, rubricFromBody, rubricMean } from "./services/home.js";
 import { calibrate, type Calibration } from "./services/lsc.js";
 import { docsPage, openApiSpec } from "./services/openapi.js";
 import { bradleyTerry, nextMatchup, recordComparison } from "./services/pairwise.js";
@@ -162,6 +163,24 @@ app.get("/projects/new", async (_req, reply) => {
       </script></main>`,
     ),
   );
+});
+
+app.get("/signin", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/");
+  return reply.type("text/html; charset=utf-8").send(spa);
+});
+
+app.get("/dashboard", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/signin");
+  return reply.type("text/html; charset=utf-8").send(spa);
+});
+
+app.get("/dashboard/:eventId", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/signin");
+  return reply.type("text/html; charset=utf-8").send(spa);
 });
 
 app.get("/feed", async (_req, reply) => {
@@ -497,24 +516,31 @@ function csv(value: string): string {
 app.post("/api/judge/scores", async (req, reply) => {
   const user = requireRole(req, reply, ["judge"]);
   if (!user) return;
-  const body = req.body as { project_id?: string; stars?: number };
-  if (!body.project_id || !Number.isInteger(body.stars) || body.stars! < 0 || body.stars! > 5) {
-    return reply.code(400).send({ error: "project_id and integer stars from 0 to 5 are required" });
+  const body = req.body as { project_id?: string; stars?: number; criteria?: unknown };
+  const criteria = rubricFromBody(body);
+  if (!body.project_id || !criteria) {
+    return reply.code(400).send({ error: "functionality, quality, and innovation must each be an integer from 0 to 5" });
   }
-  const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(body.project_id);
+  const project = db.prepare("SELECT id, event_id, track_id FROM projects WHERE id = ?").get(body.project_id) as
+    | { id: string; event_id: string; track_id: string }
+    | undefined;
   if (!project) return reply.code(404).send({ error: "project not found" });
-  const criteria = JSON.stringify({ bars: body.stars });
+  if (!judgeCovers(user.id, project.event_id, project.track_id)) {
+    return reply.code(403).send({ error: "This participant is outside your tracks." });
+  }
+  const raw = rubricMean(criteria);
+  const criteriaJson = JSON.stringify(criteria);
   db.prepare(`
     INSERT INTO scores (judge_id, project_id, criteria_json, raw_score, comment)
     VALUES (?, ?, ?, ?, '')
     ON CONFLICT (judge_id, project_id) DO UPDATE SET
       criteria_json = excluded.criteria_json,
       raw_score = excluded.raw_score
-  `).run(user.id, body.project_id, criteria, body.stars);
+  `).run(user.id, body.project_id, criteriaJson, raw);
   rechainScores();
   storeCalibration(liveCalibration());
-  appendAudit(user.id, "SCORE_SUBMITTED", { projectId: body.project_id, stars: body.stars });
-  return { ok: true };
+  appendAudit(user.id, "SCORE_SUBMITTED", { projectId: body.project_id, criteria, raw });
+  return { ok: true, raw };
 });
 
 app.get("/events/:event_id/judges/:judge_id/feed", async (req, reply) => {
@@ -626,7 +652,9 @@ app.get("/api/audit/verify", async () => verifyDatabase());
 app.get("/api/openapi.json", async () => openApiSpec);
 
 app.get("/docs", async (_req, reply) =>
-  reply.type("text/html").send(shell("Docs", `<main class="pad"><div class="panel">${docsPage(openApiSpec)}</div></main>`)),
+  reply.type("text/html; charset=utf-8").send(
+    `<!doctype html><html><head><meta charset="utf-8"><title>Docs</title></head><body>${docsPage(openApiSpec)}</body></html>`,
+  ),
 );
 
 app.get("/projects/:id/certificate", async (req, reply) => {
@@ -717,17 +745,71 @@ function storeCalibration(result: Calibration): void {
   rechainScores();
 }
 
-const SESSION_TOKENS = new Set(["org_7f2a", "jdg_a_91bc", "jdg_b_44de", "prt_2e88"]);
+type AccountRow = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  tracks_json: string;
+  password_hash: string;
+  token: string;
+};
 
-function userForToken(token: string): SessionUser | null {
-  const row = db
+function accountByToken(token: string): AccountRow | undefined {
+  if (!token) return undefined;
+  return db
     .prepare(
-      `SELECT u.id, u.name, u.role
+      `SELECT u.id, u.name, u.email, u.role, u.tracks_json, u.password_hash, s.token
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token = ?`,
     )
-    .get(token) as SessionUser | undefined;
-  return row ?? null;
+    .get(token) as AccountRow | undefined;
+}
+
+function accountByEmail(email: string): AccountRow | undefined {
+  return db
+    .prepare(
+      `SELECT u.id, u.name, u.email, u.role, u.tracks_json, u.password_hash, s.token
+       FROM users u JOIN sessions s ON s.user_id = u.id
+       WHERE lower(u.email) = ?`,
+    )
+    .get(email) as AccountRow | undefined;
+}
+
+function publicAccount(row: AccountRow) {
+  const trackIds = parsedJson(row.tracks_json);
+  const ids = Array.isArray(trackIds) ? trackIds.filter((id): id is string => typeof id === "string") : [];
+  const tracks = ids.length
+    ? (db.prepare(`SELECT id, name FROM tracks WHERE id IN (${ids.map(() => "?").join(",")})`).all(...ids) as {
+        id: string;
+        name: string;
+      }[])
+    : [];
+  const label = assignmentLabel(row.id, row.role);
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    event: label ? { id: "", name: label } : null,
+    tracks,
+  };
+}
+
+function homeFor(_role: string): string {
+  return "/dashboard";
+}
+
+function sessionToken(req: { headers: { cookie?: string } }): string {
+  const match = (req.headers.cookie ?? "").match(/(?:^|;)\s*session=([^;]+)/);
+  return match ? decodeURIComponent(match[1].trim()) : "";
+}
+
+function writeSessionCookie(reply: { header: (name: string, value: string) => unknown }, token: string): void {
+  const cookie = token
+    ? `session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`
+    : "session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
+  reply.header("Set-Cookie", cookie);
 }
 
 function parsedJson(value: string): unknown {
@@ -738,18 +820,27 @@ function parsedJson(value: string): unknown {
   }
 }
 
-app.get("/api/session", async (req) => ({ user: currentUser(req) }));
+app.get("/api/session", async (req) => {
+  const account = accountByToken(sessionToken(req));
+  return { user: account ? publicAccount(account) : null };
+});
+
+app.post("/api/login", async (req, reply) => {
+  const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  const account = email.includes("@") ? accountByEmail(email) : undefined;
+  const valid = account ? verifyPassword(password, account.password_hash) : false;
+  if (!account || !valid) return reply.code(401).send({ error: "Email or password is wrong." });
+  writeSessionCookie(reply, account.token);
+  return { user: publicAccount(account), next: homeFor(account.role) };
+});
 
 app.post("/api/session", async (req, reply) => {
   const token = (req.body as { token?: unknown } | null)?.token;
-  if (typeof token !== "string") return reply.code(400).send({ error: "unknown token" });
-  if (token === "") {
-    reply.header("Set-Cookie", "session=; Path=/; SameSite=Lax; Max-Age=0");
-    return { user: null };
-  }
-  if (!SESSION_TOKENS.has(token)) return reply.code(400).send({ error: "unknown token" });
-  reply.header("Set-Cookie", `session=${token}; Path=/; SameSite=Lax`);
-  return { user: userForToken(token) };
+  if (token !== "") return reply.code(400).send({ error: "sign in with email and password" });
+  writeSessionCookie(reply, "");
+  return { user: null };
 });
 
 app.get("/api/projects", async () => {
@@ -851,6 +942,57 @@ app.get("/api/feed", async (req, reply) => {
       }[])
     : [];
   return { projects };
+});
+
+app.get("/api/dashboard", async (req, reply) => {
+  const user = requireRole(req, reply, ["judge", "organizer", "participant"]);
+  if (!user) return;
+  return loadHome(user.id, user.role);
+});
+
+app.post("/api/events", async (req, reply) => {
+  const user = requireRole(req, reply, ["organizer"]);
+  if (!user) return;
+  const body = req.body as { name?: string; submissions_close?: string };
+  const result = createEvent(user.id, body.name ?? "", body.submissions_close ?? "");
+  if ("error" in result) return reply.code(400).send(result);
+  return result;
+});
+
+app.post("/api/events/:id/participants", async (req, reply) => {
+  const user = requireRole(req, reply, ["organizer"]);
+  if (!user) return;
+  const { id } = req.params as { id: string };
+  const body = req.body as {
+    team_name?: string;
+    emails?: unknown;
+    title?: string;
+    summary?: string;
+    track_id?: string;
+    repo_url?: string;
+  };
+  const emails = Array.isArray(body.emails) ? body.emails.filter((email): email is string => typeof email === "string") : [];
+  const result = addParticipant(user.id, id, {
+    teamName: body.team_name ?? "",
+    emails,
+    title: body.title ?? "",
+    summary: body.summary ?? "",
+    trackId: body.track_id ?? "",
+    repoUrl: body.repo_url ?? "",
+  });
+  if ("error" in result) return reply.code(400).send(result);
+  return result;
+});
+
+app.post("/api/events/:id/judges", async (req, reply) => {
+  const user = requireRole(req, reply, ["organizer"]);
+  if (!user) return;
+  const { id } = req.params as { id: string };
+  const body = req.body as { email?: string; tracks?: unknown };
+  const tracks = Array.isArray(body.tracks) ? body.tracks.filter((track): track is string => typeof track === "string") : [];
+  const result = assignJudge(user.id, id, body.email ?? "", tracks);
+  if ("error" in result) return reply.code(400).send(result);
+  return result;
 });
 
 app.get("/api/pairwise/next", async (req, reply) => {

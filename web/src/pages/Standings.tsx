@@ -28,7 +28,7 @@ export function Standings() {
   if (error) return <Status error={error} />;
   if (!data) return <Loading />;
 
-  const organizer = session.role === "organizer" || session.token === "org_7f2a";
+  const organizer = session.role === "organizer";
 
   return (
     <div className="stack-lg">

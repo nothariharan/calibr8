@@ -1,83 +1,71 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { getSession } from "./api";
-
-export const SESSIONS = [
-  { token: "org_7f2a", label: "Organizer", role: "organizer" },
-  { token: "jdg_a_91bc", label: "Judge A", role: "judge" },
-  { token: "jdg_b_44de", label: "Judge B", role: "judge" },
-  { token: "prt_2e88", label: "Participant", role: "participant" },
-] as const;
-
-const TOKEN_MAP: Record<string, { label: string; role: string }> = Object.fromEntries(
-  SESSIONS.map((session) => [session.token, { label: session.label, role: session.role }]),
-);
+import { getSession, login, logout } from "./api";
 
 export type SessionState = {
-  token: string;
-  label: string | null;
+  id: string | null;
+  name: string | null;
+  email: string | null;
   role: string | null;
+  eventName: string | null;
+  tracks: string[];
   signedIn: boolean;
+  ready: boolean;
 };
 
 type SessionContextValue = {
   session: SessionState;
-  choose: (token: string) => void;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
-function readToken(): string {
-  const match = document.cookie.match(/(?:^|;)\s*session=([^;]*)/);
-  if (!match) return "";
-  const token = decodeURIComponent(match[1].trim());
-  return token;
-}
+const signedOut: SessionState = {
+  id: null,
+  name: null,
+  email: null,
+  role: null,
+  eventName: null,
+  tracks: [],
+  signedIn: false,
+  ready: false,
+};
 
-function initialSession(): SessionState {
-  const token = readToken();
-  const mapped = TOKEN_MAP[token];
-  if (!mapped) return { token: "", label: null, role: null, signedIn: false };
-  return { token, label: mapped.label, role: mapped.role, signedIn: true };
-}
-
-function labelFromServer(payload: { label?: string; role?: string; name?: string }, fallback: string | null): string | null {
-  if (payload.label) return payload.label;
-  if (payload.role) {
-    const pretty = payload.role.charAt(0).toUpperCase() + payload.role.slice(1);
-    if (payload.name && payload.name.toLowerCase() !== payload.role.toLowerCase()) return `${pretty} · ${payload.name}`;
-    return pretty;
-  }
-  if (payload.name) return payload.name;
-  return fallback;
+function fromServer(
+  payload: {
+    id?: string;
+    name?: string;
+    email?: string;
+    role?: string;
+    eventName?: string;
+    tracks?: string[];
+  },
+  ready: boolean,
+): SessionState {
+  if (!payload.role && !payload.id) return { ...signedOut, ready };
+  return {
+    id: payload.id ?? null,
+    name: payload.name ?? null,
+    email: payload.email ?? null,
+    role: payload.role ?? null,
+    eventName: payload.eventName ?? null,
+    tracks: payload.tracks ?? [],
+    signedIn: true,
+    ready,
+  };
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<SessionState>(initialSession);
+  const [session, setSession] = useState<SessionState>(signedOut);
 
   useEffect(() => {
-    const token = readToken();
-    const mapped = TOKEN_MAP[token];
     let cancel = false;
     getSession()
       .then((payload) => {
-        if (cancel) return;
-        const label = labelFromServer(payload, mapped?.label ?? null);
-        const role = payload.role ?? mapped?.role ?? null;
-        if (!label && !role) {
-          setSession(mapped ? { token, label: mapped.label, role: mapped.role, signedIn: true } : initialSession());
-          return;
-        }
-        setSession({
-          token,
-          role,
-          label: label ?? (role ? role.charAt(0).toUpperCase() + role.slice(1) : null),
-          signedIn: true,
-        });
+        if (!cancel) setSession(fromServer(payload, true));
       })
       .catch(() => {
-        if (cancel) return;
-        if (mapped) setSession({ token, label: mapped.label, role: mapped.role, signedIn: true });
-        else setSession({ token: "", label: null, role: null, signedIn: false });
+        if (!cancel) setSession({ ...signedOut, ready: true });
       });
     return () => {
       cancel = true;
@@ -87,10 +75,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionContextValue>(
     () => ({
       session,
-      choose: (token: string) => {
-        if (token) document.cookie = `session=${token}; path=/`;
-        else document.cookie = "session=; Max-Age=0; path=/";
-        location.reload();
+      signIn: async (email: string, password: string) => {
+        document.cookie = "session=; Max-Age=0; path=/";
+        const payload = await login(email, password);
+        location.assign(payload.next || "/dashboard");
+      },
+      signOut: async () => {
+        document.cookie = "session=; Max-Age=0; path=/";
+        await logout();
+        location.assign("/");
       },
     }),
     [session],
