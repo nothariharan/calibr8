@@ -1,16 +1,32 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { asApiError, postScore, type HomeEvent, type HomeParticipant, type Rubric } from "../api";
+import { asApiError, getStandings, postScore, type HomeEvent, type HomeParticipant, type Rubric } from "../api";
 import { Empty } from "./Status";
 import { TrackGlyph } from "./TrackGlyph";
 
 type Facts = NonNullable<HomeParticipant["facts"]>;
 
 const ANCHORS = [
-  ["functionality", "Functionality", "0 does not boot. 3 survives a reload. 5 is solid end to end."],
-  ["quality", "Quality", "0 is a façade. 3 has a real path. 5 has validation, errors, and tests."],
-  ["innovation", "Innovation", "0 is a generic shell. 3 fits the track. 5 is specific to the problem."],
+  ["functionality", "Functionality"],
+  ["quality", "Quality"],
+  ["innovation", "Innovation"],
 ] as const;
+
+const SCORE_WORDS = ["Absent", "Barely there", "Partial", "Works", "Strong", "Done carefully"] as const;
+
+function slug(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+}
+
+function submissionLinks(project: HomeParticipant): { label: string; href: string }[] {
+  const name = slug(project.title);
+  const links = [
+    project.repoUrl ? { label: "Repository", href: project.repoUrl } : null,
+    { label: "GitHub", href: `https://github.com/harbor-demo/${name}` },
+    { label: "Demo", href: `https://${name}.demo.local` },
+  ];
+  return links.filter((link): link is { label: string; href: string } => link != null);
+}
 
 function list(values: string[] | undefined): string[] {
   if (!values) return [];
@@ -101,6 +117,7 @@ export function JudgeReel({
   const [active, setActive] = useState(0);
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   const [storedId, setStoredId] = useState<string | null>(null);
+  const [ranks, setRanks] = useState<Map<string, number>>(() => new Map());
 
   const shown = focusId ? event.participants.filter((item) => item.id === focusId) : event.participants;
   const slideKey = shown.map((item) => item.id).join("|");
@@ -119,6 +136,22 @@ export function JudgeReel({
   useEffect(() => {
     setActive(0);
   }, [event.id, focusId]);
+
+  useEffect(() => {
+    if (role === "judge") return;
+    let cancel = false;
+    getStandings()
+      .then((data) => {
+        if (cancel) return;
+        setRanks(new Map(data.projects.flatMap((project) => (project.calibratedRank == null ? [] : [[project.id, project.calibratedRank]]))));
+      })
+      .catch(() => {
+        if (!cancel) setRanks(new Map());
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [role, event.id]);
 
   useEffect(() => {
     const root = scrollerRef.current;
@@ -207,7 +240,7 @@ export function JudgeReel({
   }
 
   return (
-    <div className="reel" ref={scrollerRef}>
+    <div className="reel-frame">
       <div className="reel-progress">
         <Link className="text-link reel-back" to="/dashboard">
           All hackathons
@@ -218,8 +251,12 @@ export function JudgeReel({
             {place} of {event.participants.length}
           </span>
           {role === "judge" ? <span className="reel-scored">{scored} scored</span> : null}
+          <Link className="text-link" to="/standings">
+            Standings
+          </Link>
         </p>
       </div>
+      <div className="reel" ref={scrollerRef}>
       {shown.map((project, index) => {
         const position = focusId ? place : index + 1;
         return (
@@ -229,42 +266,22 @@ export function JudgeReel({
             data-reel-id={project.id}
             aria-label={`${position} of ${event.participants.length}, ${project.title}`}
           >
-            <div className={role === "judge" ? "reel-layout is-judge" : "reel-layout"}>
-              <div className="reel-story">
-                <div className="reel-identity">
-                  <div className="reel-glyph">
-                    <TrackGlyph track={project.track} />
-                  </div>
-                  <div>
-                    <p className="reel-kicker">{project.track}</p>
-                    <h2>{project.title}</h2>
-                    <p className="reel-team">{project.team}</p>
-                  </div>
-                </div>
-                {project.summary ? <p className="reel-summary">{project.summary}</p> : null}
-                <Facts project={project} participants={event.participants} />
-                {focusId ? (
-                  <p className="reel-neighbors">
-                    {previous ? (
-                      <Link className="text-link" to={`/dashboard/${event.id}/projects/${previous.id}`}>
-                        Previous project
-                      </Link>
-                    ) : null}
-                    {following ? (
-                      <Link className="text-link" to={`/dashboard/${event.id}/projects/${following.id}`}>
-                        Next project
-                      </Link>
-                    ) : null}
-                  </p>
-                ) : null}
-              </div>
-              {role === "judge" ? (
-                <Ballot participant={project} stored={storedId === project.id} onSaved={handleSaved} />
-              ) : null}
-            </div>
+            <ProjectPane
+              project={project}
+              participants={event.participants}
+              role={role}
+              eventId={event.id}
+              previousId={previous?.id}
+              followingId={following?.id}
+              focusId={focusId}
+              stored={storedId === project.id}
+              rank={ranks.get(project.id) ?? null}
+              onSaved={handleSaved}
+            />
           </section>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -272,11 +289,17 @@ export function JudgeReel({
 function Facts({ project, participants }: { project: HomeParticipant; participants: HomeParticipant[] }) {
   const facts = readFacts(project);
   if (!facts.scanned) {
-    return <p className="reel-scan">No local tree was scanned for this project.</p>;
+    return (
+      <div className="reel-block">
+        <p className="reel-label">From the project tree</p>
+        <p className="reel-scan">No local tree was scanned. The claim above is the team’s own description.</p>
+      </div>
+    );
   }
   if (!hasAnyFact(facts)) {
     return (
       <div className="reel-facts">
+        <p className="reel-label">From the project tree</p>
         <p className="reel-scan">This tree was scanned. The manifest has no database driver, validator, or test runner.</p>
         <p className="reel-peer">{testRunnerLine(project, participants)}</p>
       </div>
@@ -284,11 +307,51 @@ function Facts({ project, participants }: { project: HomeParticipant; participan
   }
   return (
     <div className="reel-facts">
+      <p className="reel-label">From the project tree</p>
       <ChipRow label="Database" values={facts.databaseDrivers} />
       <ChipRow label="Validators" values={facts.validators} />
       <ChipRow label="Test runner" values={facts.testRunner ? [facts.testRunner] : []} />
       <ChipRow label="Test files" values={facts.testFiles} />
       <p className="reel-peer">{testRunnerLine(project, participants)}</p>
+    </div>
+  );
+}
+
+function ResultPane({ project, rank }: { project: HomeParticipant; rank: number | null }) {
+  const notes = project.notes ?? [];
+  return (
+    <div className="reel-ballot">
+      <p className="reel-label">How this project placed</p>
+      <p className="reel-scale">Rank uses the calibrated score. Feedback is what the judges wrote. It is not part of the rank.</p>
+      <div className="read-scores result-figures">
+        <div>
+          <p className="reel-label">Rank</p>
+          <p>{rank ?? "—"}</p>
+        </div>
+        <div>
+          <p className="reel-label">Raw</p>
+          <p>{project.raw == null ? "—" : project.raw.toFixed(2)}</p>
+        </div>
+        <div>
+          <p className="reel-label">Calibrated</p>
+          <p>{project.calibrated == null ? "—" : project.calibrated.toFixed(2)}</p>
+        </div>
+      </div>
+      <div>
+        <p className="reel-label">Feedback</p>
+        {notes.length ? (
+          <ul className="note-list">
+            {notes.map((note) => (
+              <li key={`${note.author}-${note.text}`}>
+                <p>{note.author}</p>
+                <p>{note.text}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">No written feedback yet.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -309,30 +372,46 @@ function ChipRow({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-function Ballot({
-  participant,
+function ProjectPane({
+  project,
+  participants,
+  role,
+  eventId,
+  previousId,
+  followingId,
+  focusId,
   stored,
+  rank,
   onSaved,
 }: {
-  participant: HomeParticipant;
+  project: HomeParticipant;
+  participants: HomeParticipant[];
+  role: "judge" | "participant";
+  eventId: string;
+  previousId?: string;
+  followingId?: string;
+  focusId?: string;
   stored: boolean;
+  rank: number | null;
   onSaved: (projectId: string) => Promise<void>;
 }) {
-  const [criteria, setCriteria] = useState<Rubric>(participant.criteria ?? { functionality: 3, quality: 3, innovation: 3 });
+  const [criteria, setCriteria] = useState<Rubric>(project.criteria ?? { functionality: 3, quality: 3, innovation: 3 });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const links = submissionLinks(project);
 
   useEffect(() => {
-    setCriteria(participant.criteria ?? { functionality: 3, quality: 3, innovation: 3 });
-  }, [participant.id, participant.criteria]);
+    setCriteria(project.criteria ?? { functionality: 3, quality: 3, innovation: 3 });
+  }, [project.id, project.criteria]);
 
   async function save(formEvent: FormEvent) {
     formEvent.preventDefault();
+    if (role !== "judge") return;
     setSaving(true);
     setError(null);
     try {
-      await postScore(participant.id, criteria);
-      await onSaved(participant.id);
+      await postScore(project.id, criteria, project.note ?? "");
+      await onSaved(project.id);
     } catch (err) {
       setError(asApiError(err).message);
     } finally {
@@ -341,32 +420,88 @@ function Ballot({
   }
 
   return (
-    <form className="reel-ballot" onSubmit={(formEvent) => void save(formEvent)}>
-      {ANCHORS.map(([key, label, anchor]) => (
-        <fieldset key={key}>
-          <legend>{label}</legend>
-          <div className="stars" role="group" aria-label={label} aria-describedby={`${participant.id}-${key}-anchor`}>
-            {[0, 1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                aria-pressed={criteria[key] === n}
-                onClick={() => setCriteria((current) => ({ ...current, [key]: n }))}
-              >
-                {n}
-              </button>
-            ))}
+    <form className="reel-layout is-judge" onSubmit={(formEvent) => void save(formEvent)}>
+      <div className="reel-story">
+        <div className="reel-identity">
+          <div className="reel-glyph">
+            <TrackGlyph track={project.track} />
           </div>
-          <p className="reel-anchor" id={`${participant.id}-${key}-anchor`}>
-            {anchor}
+          <div>
+            <p className="reel-kicker">{project.track}</p>
+            <h2>{project.title}</h2>
+            <p className="reel-team">{project.team}</p>
+          </div>
+        </div>
+        {project.summary ? (
+          <div className="reel-block">
+            <p className="reel-label">What they claim it is</p>
+            <p className="reel-summary">{project.summary}</p>
+          </div>
+        ) : null}
+        <div className="reel-block">
+          <p className="reel-label">Links on the submission</p>
+          <ul className="submission-links">
+            {links.map((link) => (
+              <li key={link.label}>
+                <a href={link.href} target="_blank" rel="noreferrer">
+                  {link.label}
+                </a>
+                <span>{link.href}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <Facts project={project} participants={participants} />
+        {focusId ? (
+          <p className="reel-neighbors">
+            {previousId ? (
+              <Link className="text-link" to={`/dashboard/${eventId}/projects/${previousId}`}>
+                Previous project
+              </Link>
+            ) : null}
+            {followingId ? (
+              <Link className="text-link" to={`/dashboard/${eventId}/projects/${followingId}`}>
+                Next project
+              </Link>
+            ) : null}
           </p>
-        </fieldset>
-      ))}
-      {error ? <p className="form-error">{error}</p> : null}
-      <button className="btn" type="submit" disabled={saving}>
-        {saving ? "Saving…" : "Commit ballot"}
-      </button>
-      {stored ? <p className="reel-stored">Ballot stored.</p> : null}
+        ) : null}
+      </div>
+      {role === "judge" ? (
+        <div className="reel-ballot">
+          <p className="reel-scale">
+            {SCORE_WORDS.map((word, index) => `${index} ${word.toLowerCase()}`).join(" · ")}
+          </p>
+          {ANCHORS.map(([key, label]) => (
+            <fieldset key={key}>
+              <legend>{label}</legend>
+              <div className="stars" role="group" aria-label={label}>
+                {[0, 1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    aria-pressed={criteria[key] === n}
+                    onClick={() => setCriteria((current) => ({ ...current, [key]: n }))}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="reel-choice">
+                {criteria[key]} — {SCORE_WORDS[criteria[key]]}
+              </p>
+            </fieldset>
+          ))}
+          {error ? <p className="form-error">{error}</p> : null}
+          <button className="btn" type="submit" disabled={saving}>
+            {saving ? "Saving…" : "Commit ballot"}
+          </button>
+          {stored ? <p className="reel-stored">Ballot stored.</p> : null}
+        </div>
+      ) : (
+        <ResultPane project={project} rank={rank} />
+      )}
     </form>
   );
 }
+

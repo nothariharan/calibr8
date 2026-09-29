@@ -180,7 +180,8 @@ export async function getStandings(): Promise<Standings> {
   const projects = asList(isRecord(data) && Array.isArray(data.projects) ? data.projects : data)
     .map(normalizeStandingProject)
     .filter((row): row is StandingProject => row !== null)
-    .sort((a, b) => (a.calibratedRank ?? 9999) - (b.calibratedRank ?? 9999));
+    .sort((a, b) => (b.calibrated ?? -Infinity) - (a.calibrated ?? -Infinity) || a.title.localeCompare(b.title))
+    .map((project, index) => ({ ...project, calibratedRank: project.calibratedRank ?? index + 1 }));
   const judges = (isRecord(data) && Array.isArray(data.judges) ? data.judges : [])
     .map(normalizeStandingJudge)
     .filter((row): row is StandingJudge => row !== null)
@@ -260,10 +261,10 @@ export async function getFeed(): Promise<FeedItem[]> {
 
 export type Rubric = { functionality: number; quality: number; innovation: number };
 
-export async function postScore(projectId: string, criteria: Rubric): Promise<void> {
+export async function postScore(projectId: string, criteria: Rubric, comment: string): Promise<void> {
   await request<unknown>("/api/judge/scores", {
     method: "POST",
-    body: JSON.stringify({ project_id: projectId, criteria }),
+    body: JSON.stringify({ project_id: projectId, criteria, comment }),
   });
 }
 
@@ -274,10 +275,13 @@ export type HomeParticipant = {
   team: string;
   track: string;
   trackId: string;
+  repoUrl?: string;
   emails: string[];
   criteria: Rubric | null;
   raw: number | null;
   calibrated: number | null;
+  note?: string;
+  notes?: { author: string; text: string }[];
   facts?: {
     scanned?: boolean;
     databaseDrivers: string[];

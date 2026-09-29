@@ -32,6 +32,14 @@ export function Standings() {
 
   return (
     <div className="stack-lg">
+      <header className="desk-intro">
+        <p className="eyebrow">After the ballots</p>
+        <h2>Standings</h2>
+        <p className="lede">
+          Rank uses the calibrated score. Raw is the average of the ballots. The shift is how many places a project
+          moved once judge leniency was removed. Notes are not in these columns.
+        </p>
+      </header>
       <div className="toolbar">
         {data.globalMean != null ? <p className="muted">Global mean {formatFixed(data.globalMean, 2)}</p> : <span />}
         {organizer ? (

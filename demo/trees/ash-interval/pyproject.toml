@@ -1,0 +1,4 @@
+[project]
+name = "ash-interval"
+version = "0.1.0"
+description = "Interval log for ash samples after a burn"

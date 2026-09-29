@@ -66,6 +66,14 @@ export function Pairs() {
 
   return (
     <div className="stack-lg">
+      <header className="desk-intro">
+        <p className="eyebrow">Close call</p>
+        <h2>Which one does the thing it claimed?</h2>
+        <p className="lede">
+          These two projects already have calibrated scores, in the same event and the same track, and the gap is under
+          0.05. Pick the one that better does what it set out to do. This choice does not rewrite the 0–5 ballots.
+        </p>
+      </header>
       <div className="pair">
         <PairCard project={match.projectA} />
         <PairCard project={match.projectB} />

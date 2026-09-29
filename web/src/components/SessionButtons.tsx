@@ -15,6 +15,7 @@ export function SessionButtons() {
   }
   return (
     <div className="session-card">
+      <p className="eyebrow">{session.role}</p>
       <p className="session-label">{session.name}</p>
       {session.eventName ? <p className="muted">{session.eventName}</p> : null}
       {session.tracks.length ? <p className="muted">{session.tracks.join(", ")}</p> : null}

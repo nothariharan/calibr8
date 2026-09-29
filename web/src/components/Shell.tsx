@@ -1,4 +1,4 @@
-import { LayoutGrid, Table } from "lucide-react";
+import { LayoutGrid, Scale, Table } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { NavLink, Outlet, useMatches } from "react-router-dom";
 import { Mark } from "./Mark";
@@ -17,6 +17,7 @@ export function usePageTitle(title: string) {
 
 const NAV = [
   { to: "/dashboard", label: "Hackathons", icon: LayoutGrid, roles: ["judge", "organizer", "participant"] },
+  { to: "/standings", label: "Standings", icon: Scale, roles: ["judge", "organizer", "participant"] },
   { to: "/records", label: "Records", icon: Table, roles: ["organizer"] },
 ];
 

@@ -22,11 +22,14 @@ export type HomeParticipant = {
   team: string;
   track: string;
   trackId: string;
+  repoUrl: string;
   emails: string[];
   facts: HomeFacts;
   criteria: Rubric | null;
   raw: number | null;
   calibrated: number | null;
+  note: string;
+  notes: { author: string; text: string }[];
 };
 
 export type HomeJudge = {
@@ -70,6 +73,7 @@ type ProjectRow = {
   track_id: string;
   track: string;
   team: string;
+  repo_url: string;
   members_json: string;
   facts_json: string;
 };
@@ -80,6 +84,7 @@ type ScoreRow = {
   criteria_json: string;
   raw_score: number;
   normalized_score: number;
+  comment: string;
 };
 
 export function rubricFromBody(body: { criteria?: unknown; stars?: unknown }): Rubric | null {
@@ -230,7 +235,7 @@ export function loadHome(userId: string, role: string): HomePayload {
   const judgeById = new Map(judges.map((judge) => [judge.id, judge]));
   const projects = db
     .prepare(
-      `SELECT p.id, p.event_id, p.title, p.summary, p.track_id, p.facts_json, t.name AS track, tm.name AS team, tm.members_json
+      `SELECT p.id, p.event_id, p.title, p.summary, p.track_id, p.facts_json, p.repo_url, t.name AS track, tm.name AS team, tm.members_json
        FROM projects p
        JOIN tracks t ON t.id = p.track_id
        JOIN teams tm ON tm.id = p.team_id
@@ -238,7 +243,7 @@ export function loadHome(userId: string, role: string): HomePayload {
     )
     .all() as ProjectRow[];
   const scores = db
-    .prepare("SELECT project_id, judge_id, criteria_json, raw_score, normalized_score FROM scores")
+    .prepare("SELECT project_id, judge_id, criteria_json, raw_score, normalized_score, comment FROM scores")
     .all() as ScoreRow[];
 
   const homeEvents: HomeEvent[] = events.map((event) => {
@@ -277,6 +282,15 @@ export function loadHome(userId: string, role: string): HomePayload {
         const own = projectScores.find((score) => score.judge_id === userId);
         const rawPool = role === "judge" ? (own ? [own] : []) : projectScores;
         const calibrated = projectScores.find((score) => Number.isFinite(score.normalized_score))?.normalized_score ?? null;
+        const notes =
+          role === "judge"
+            ? []
+            : projectScores
+                .map((score) => ({
+                  author: judgeById.get(score.judge_id)?.name ?? "Judge",
+                  text: (score.comment ?? "").trim(),
+                }))
+                .filter((note) => note.text.length > 0);
         return {
           id: project.id,
           title: project.title,
@@ -284,11 +298,14 @@ export function loadHome(userId: string, role: string): HomePayload {
           team: project.team,
           track: project.track,
           trackId: project.track_id,
+          repoUrl: project.repo_url,
           emails: parseStringList(project.members_json),
           facts: readFacts(project.facts_json),
           criteria: role === "judge" && own ? readRubric(own.criteria_json) : null,
           raw: rawPool.length ? rawPool.reduce((sum, score) => sum + score.raw_score, 0) / rawPool.length : null,
           calibrated,
+          note: role === "judge" && own ? (own.comment ?? "").trim() : "",
+          notes,
         };
       }),
     };

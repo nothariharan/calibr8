@@ -1,5 +1,6 @@
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import { Landing } from "./components/Landing";
+import { DemoReel } from "./demo/DemoReel";
 import { RequireRole } from "./components/RequireRole";
 import { Shell } from "./components/Shell";
 import { Dashboard } from "./pages/Dashboard";
@@ -14,6 +15,9 @@ import { SessionProvider } from "./session";
 
 const router = createBrowserRouter([
   { path: "/", element: <Landing /> },
+  { path: "/demo", element: <DemoReel /> },
+  { path: "/demo/projects/:projectId", element: <DemoReel /> },
+  { path: "/demo/judge/:judgeId/projects/:projectId", element: <DemoReel /> },
   { path: "/signin", element: <SignIn /> },
   {
     element: <Shell />,

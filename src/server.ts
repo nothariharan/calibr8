@@ -171,6 +171,24 @@ app.get("/signin", async (_req, reply) => {
   return reply.type("text/html; charset=utf-8").send(spa);
 });
 
+app.get("/demo", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/");
+  return reply.type("text/html; charset=utf-8").send(spa);
+});
+
+app.get("/demo/projects/:projectId", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/");
+  return reply.type("text/html; charset=utf-8").send(spa);
+});
+
+app.get("/demo/judge/:judgeId/projects/:projectId", async (_req, reply) => {
+  const spa = readSpaIndex();
+  if (!spa) return reply.redirect("/");
+  return reply.type("text/html; charset=utf-8").send(spa);
+});
+
 app.get("/dashboard", async (_req, reply) => {
   const spa = readSpaIndex();
   if (!spa) return reply.redirect("/signin");
@@ -573,10 +591,17 @@ function csv(value: string): string {
 app.post("/api/judge/scores", async (req, reply) => {
   const user = requireRole(req, reply, ["judge"]);
   if (!user) return;
-  const body = req.body as { project_id?: string; stars?: number; criteria?: unknown };
+  const body = req.body as { project_id?: string; stars?: number; criteria?: unknown; comment?: unknown };
   const criteria = rubricFromBody(body);
   if (!body.project_id || !criteria) {
     return reply.code(400).send({ error: "functionality, quality, and innovation must each be an integer from 0 to 5" });
+  }
+  if (body.comment != null && typeof body.comment !== "string") {
+    return reply.code(400).send({ error: "The note has to be text." });
+  }
+  const comment = typeof body.comment === "string" ? body.comment.trim() : null;
+  if (comment != null && comment.length > 800) {
+    return reply.code(400).send({ error: "Keep the note under 800 characters." });
   }
   const project = db.prepare("SELECT id, event_id, track_id FROM projects WHERE id = ?").get(body.project_id) as
     | { id: string; event_id: string; track_id: string }
@@ -587,17 +612,22 @@ app.post("/api/judge/scores", async (req, reply) => {
   }
   const raw = rubricMean(criteria);
   const criteriaJson = JSON.stringify(criteria);
+  const prior = db
+    .prepare("SELECT comment FROM scores WHERE judge_id = ? AND project_id = ?")
+    .get(user.id, body.project_id) as { comment: string } | undefined;
+  const storedNote = comment ?? prior?.comment ?? "";
   db.prepare(`
     INSERT INTO scores (judge_id, project_id, criteria_json, raw_score, comment)
-    VALUES (?, ?, ?, ?, '')
+    VALUES (?, ?, ?, ?, ?)
     ON CONFLICT (judge_id, project_id) DO UPDATE SET
       criteria_json = excluded.criteria_json,
-      raw_score = excluded.raw_score
-  `).run(user.id, body.project_id, criteriaJson, raw);
+      raw_score = excluded.raw_score,
+      comment = excluded.comment
+  `).run(user.id, body.project_id, criteriaJson, raw, storedNote);
   rechainScores();
   const eventResult = eventCalibration(project.event_id);
   if (eventResult) storeCalibration(eventResult);
-  appendAudit(user.id, "SCORE_SUBMITTED", { projectId: body.project_id, criteria, raw });
+  appendAudit(user.id, "SCORE_SUBMITTED", { projectId: body.project_id, criteria, raw, comment: storedNote });
   return { ok: true, raw };
 });
 

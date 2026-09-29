@@ -13,6 +13,7 @@ import {
   type StandingProject,
 } from "../api";
 import { JudgeReel } from "../components/JudgeReel";
+import { DemoBanner } from "../demo/DemoBanner";
 import { usePageTitle } from "../components/Shell";
 import { Empty, Loading, Status } from "../components/Status";
 import { useSession } from "../session";
@@ -20,6 +21,21 @@ import { useSession } from "../session";
 function num(value: number | null): string {
   return value == null ? "—" : value.toFixed(2);
 }
+
+const ROLE_COPY: Record<string, { eyebrow: string; lede: string }> = {
+  judge: {
+    eyebrow: "Judge",
+    lede: "Open a hackathon and score one project at a time. Standings shows the ranking after calibration. Your ballot is the three scores on the reel.",
+  },
+  organizer: {
+    eyebrow: "Organizer",
+    lede: "Set a new hackathon, then add the projects and the judges. Standings rank by the calibrated score. Raw is the average of the ballots. Calibrated is that average after each judge’s tendency to score high or low is removed.",
+  },
+  participant: {
+    eyebrow: "Participant",
+    lede: "Open your project to see where it placed and what the judges wrote. The rank uses the calibrated score. The notes are feedback, and they are not part of that score.",
+  },
+};
 
 export function Dashboard() {
   const { eventId, projectId } = useParams();
@@ -59,20 +75,22 @@ export function Dashboard() {
   if (!eventId) {
     return (
       <div className="desk">
-        <header className="event-head">
-          <div>
-            <p className="eyebrow">{role}</p>
-            <h2>{session.name}</h2>
-            <p className="muted">
-              {role === "judge"
-                ? "Hackathons you are assigned to."
-                : role === "organizer"
-                  ? "Hackathons you run. Open one to see its participants and standings."
-                  : "Hackathons that list your email on a team."}
-            </p>
-          </div>
+        <header className="desk-intro">
+          <p className="eyebrow">{ROLE_COPY[role]?.eyebrow ?? role}</p>
+          <h2>{session.name}</h2>
+          <p className="lede">{ROLE_COPY[role]?.lede}</p>
         </header>
         {notice ? <p className="form-error">{notice}</p> : null}
+        {role === "organizer" ? (
+          <CreateEvent
+            onCreated={async () => {
+              setNotice(null);
+              await reload();
+            }}
+            onError={(message) => setNotice(message)}
+          />
+        ) : null}
+        <DemoBanner />
         {home.events.length ? (
           <div className="hack-cards">
             {home.events.map((event) => (
@@ -93,15 +111,6 @@ export function Dashboard() {
               : "No hackathon is assigned to this account."}
           </Empty>
         )}
-        {role === "organizer" ? (
-          <CreateEvent
-            onCreated={async () => {
-              setNotice(null);
-              await reload();
-            }}
-            onError={(message) => setNotice(message)}
-          />
-        ) : null}
       </div>
     );
   }
@@ -130,16 +139,48 @@ export function Dashboard() {
     return (
       <div className="desk">
         <p>
-          <Link to={`/dashboard/${event.id}`}>{event.name}</Link>
+          <Link className="text-link" to={`/dashboard/${event.id}`}>
+            {event.name}
+          </Link>
         </p>
         {notice ? <p className="form-error">{notice}</p> : null}
-        <article className="panel stack">
+        <article className="panel stack project-read">
           <p className="eyebrow">{project.track}</p>
           <h2>{project.title}</h2>
-          <p className="muted">
-            {project.team}
-            {project.summary ? ` · ${project.summary}` : ""}
-          </p>
+          <p className="reel-team">{project.team}</p>
+          {project.summary ? (
+            <div>
+              <p className="reel-label">What the team said it does</p>
+              <p>{project.summary}</p>
+            </div>
+          ) : null}
+          <div className="read-scores">
+            <div>
+              <p className="reel-label">Raw mean</p>
+              <p>{num(project.raw)}</p>
+              <p className="muted">Average of the ballots on this project.</p>
+            </div>
+            <div>
+              <p className="reel-label">Calibrated</p>
+              <p>{num(project.calibrated)}</p>
+              <p className="muted">The same ballots after judge leniency is removed. Notes are not in this number.</p>
+            </div>
+          </div>
+          <div>
+            <p className="reel-label">What the judges said it is doing</p>
+            {project.notes?.length ? (
+              <ul className="note-list">
+                {project.notes.map((note) => (
+                  <li key={`${note.author}-${note.text}`}>
+                    <p>{note.author}</p>
+                    <p>{note.text}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">No note yet.</p>
+            )}
+          </div>
         </article>
       </div>
     );
@@ -162,9 +203,19 @@ export function Dashboard() {
 
   return (
     <div className="desk">
-      <p>
-        <Link to="/dashboard">All hackathons</Link>
-      </p>
+      <header className="desk-intro">
+        <p>
+          <Link className="text-link" to="/dashboard">
+            All hackathons
+          </Link>
+        </p>
+        <p className="eyebrow">Organizer</p>
+        <h2>{event.name}</h2>
+        <p className="lede">
+          Participants are the projects judges will read one at a time. Standings rank by the calibrated score. A judge’s
+          note describes what they think the project is trying to do, and that sentence is not part of the rank.
+        </p>
+      </header>
       {notice ? <p className="form-error">{notice}</p> : null}
       <EventBlock
         event={event}
@@ -201,14 +252,11 @@ function EventBlock({
   return (
     <section className="panel stack">
       <div className="event-head">
-        <div>
-          <h2>{event.name}</h2>
-          <p className="muted">
-            {event.closed ? `Submissions closed ${event.submissionsClose}` : `Submissions open until ${event.submissionsClose}`}
-            {event.tracks.length ? ` · ${event.tracks.map((track) => track.name).join(", ")}` : ""}
-          </p>
-        </div>
-        <p className="count">{event.participants.length} participants</p>
+        <p className="muted">
+          {event.closed ? `Submissions closed ${event.submissionsClose}` : `Submissions open until ${event.submissionsClose}`}
+          {event.tracks.length ? ` · ${event.tracks.map((track) => track.name).join(", ")}` : ""}
+        </p>
+        <p className="count">{event.participants.length} projects</p>
       </div>
       {role === "organizer" && event.judges.length ? (
         <p className="muted">
@@ -399,8 +447,12 @@ function EventStandings({ event }: { event: HomeEvent }) {
 
   return (
     <section className="panel stack">
+      <p className="eyebrow">After the ballots</p>
       <h2>Standings</h2>
-      <p className="muted">Calibrated rank for this hackathon. Raw is the average of the ballots. Calibration is the project score after judge bias is removed.</p>
+      <p className="lede">
+        Rank uses the calibrated score. Raw is the average of the 0–5 ballots. Calibrated is that average once each
+        judge’s habit of scoring high or low has been taken out. Written notes are not in either column.
+      </p>
       {!rows ? (
         <Loading />
       ) : rows.length ? (
@@ -454,8 +506,9 @@ function CreateEvent({ onCreated, onError }: { onCreated: () => Promise<void>; o
 
   return (
     <form className="panel stack" onSubmit={(event) => void submit(event)}>
+      <p className="eyebrow">New event</p>
       <h2>Create a hackathon</h2>
-      <p className="muted">A new event starts empty. Participants can be added until the close time.</p>
+      <p className="lede">A new event starts empty. Participants can be added until the close time, and it is calibrated on its own scored projects.</p>
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Hackathon name" required />
       <label>
         Submissions close, UTC
@@ -473,11 +526,11 @@ function AuditField({ audit }: { audit: HomePayload["audit"] }) {
   return (
     <section className="panel audit-field">
       <p className="eyebrow">Integrity</p>
-      <h2>Every ballot is on a hash chain.</h2>
-      <p className="muted">
-        A score hash is SHA-256 of the previous hash, the judge, the project, the criteria, and the raw score. Changing a
-        stored score breaks the chain.
-      </p>
+        <h2>Every ballot is on a hash chain.</h2>
+        <p className="lede">
+          A score hash is SHA-256 of the previous hash, the judge, the project, the criteria, and the raw score. Changing a
+          stored score breaks the chain. The written note is kept with the ballot and is not part of that hash.
+        </p>
       <dl>
         <div>
           <dt>Score chain</dt>

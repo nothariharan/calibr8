@@ -10,6 +10,40 @@ export function SignIn() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const quick = [
+    {
+      role: "Organizer",
+      detail: "Set a new hackathon, add projects, and assign judges.",
+      email: "organizer@example.org",
+      password: "organizer",
+    },
+    {
+      role: "Judge",
+      detail: "Score one project at a time, then open the standings.",
+      email: "tomas.varga@example.org",
+      password: "tomas-varga",
+    },
+    {
+      role: "Participant",
+      detail: "See how your project placed and what the judges wrote.",
+      email: "participant@example.org",
+      password: "participant",
+    },
+  ] as const;
+
+  async function enter(nextEmail: string, nextPassword: string) {
+    setEmail(nextEmail);
+    setPassword(nextPassword);
+    setError(null);
+    setPending(true);
+    try {
+      await signIn(nextEmail, nextPassword);
+    } catch (err) {
+      setPending(false);
+      setError(err instanceof Error ? err.message : "Sign-in failed");
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
@@ -39,9 +73,16 @@ export function SignIn() {
         <p className="eyebrow">Event account</p>
         <h1>Sign in.</h1>
         <p className="lede">
-          Judges, organizers, and participants sign in with the email on their assignment. That account opens the hackathon
-          it belongs to.
+          Use a role to open that account, or sign in with the email on an assignment.
         </p>
+        <div className="quick-roles">
+          {quick.map((item) => (
+            <button key={item.role} type="button" disabled={pending} onClick={() => void enter(item.email, item.password)}>
+              <strong>{item.role}</strong>
+              <span>{item.detail}</span>
+            </button>
+          ))}
+        </div>
         {session.signedIn && session.name ? (
           <p className="signed">
             Signed in as {session.name}

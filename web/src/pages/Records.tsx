@@ -35,6 +35,14 @@ export function Records() {
 
   return (
     <div className="stack-lg">
+      <header className="desk-intro">
+        <p className="eyebrow">Organizer</p>
+        <h2>Records</h2>
+        <p className="lede">
+          These are the stored rows: projects, teams, tracks, judges, and scores. The CSV is the same score export the
+          acceptance check downloads.
+        </p>
+      </header>
       <div className="toolbar">
         <div className="tabs" role="tablist">
           {OBJECTS.map((name) => (

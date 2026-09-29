@@ -58,24 +58,32 @@ export function Landing() {
   return (
     <div className="landing-page" ref={page}>
       <header className="sticky top-0 z-20 h-16 border-b border-transparent bg-[color-mix(in_srgb,var(--bg)_85%,transparent)] backdrop-blur">
-        <Container className="flex h-full items-center gap-6">
-          <Link className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.03em]" to="/">
+        <Container className="grid h-full grid-cols-[1fr_auto] items-center lg:grid-cols-[1fr_auto_1fr]">
+          <Link className="flex items-center gap-2 justify-self-start text-[15px] font-semibold tracking-[-0.03em]" to="/">
             <Mark size={22} />
             calibr8
           </Link>
-          <nav className="mx-auto hidden items-center gap-6 text-[13px] text-[color-mix(in_srgb,var(--ink)_80%,transparent)] lg:flex">
+          <nav className="hidden items-center justify-center gap-6 text-[13px] text-[color-mix(in_srgb,var(--ink)_80%,transparent)] lg:flex">
             {LINKS.map(([label, href]) => (
               <a key={label} href={href}>
                 {label}
               </a>
             ))}
           </nav>
-          <Link
-            className="is-primary ml-auto inline-flex h-10 items-center rounded-full bg-[var(--ink)] px-4 text-[13px] font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--accent)]"
-            to={start}
-          >
-            Get started <span aria-hidden="true">→</span>
-          </Link>
+          <div className="flex items-center justify-self-end gap-5">
+            <Link
+              className="text-[13px] text-[color-mix(in_srgb,var(--ink)_80%,transparent)] hover:text-[var(--ink)]"
+              to="/demo"
+            >
+              Demo
+            </Link>
+            <Link
+              className="is-primary inline-flex h-10 items-center rounded-full bg-[var(--ink)] px-4 text-[13px] font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--accent)]"
+              to={start}
+            >
+              Get started <span aria-hidden="true">→</span>
+            </Link>
+          </div>
         </Container>
       </header>
       <main>
