@@ -7,23 +7,15 @@ import {
   createHackathon,
   getDashboard,
   getStandings,
-  postScore,
   type ApiError,
   type HomeEvent,
-  type HomeParticipant,
   type HomePayload,
-  type Rubric,
   type StandingProject,
 } from "../api";
+import { JudgeReel } from "../components/JudgeReel";
 import { usePageTitle } from "../components/Shell";
 import { Empty, Loading, Status } from "../components/Status";
 import { useSession } from "../session";
-
-const RUBRIC = [
-  ["functionality", "Functionality"],
-  ["quality", "Quality"],
-  ["innovation", "Innovation"],
-] as const;
 
 function num(value: number | null): string {
   return value == null ? "—" : value.toFixed(2);
@@ -85,10 +77,12 @@ export function Dashboard() {
           <div className="hack-cards">
             {home.events.map((event) => (
               <Link className="hack-card" key={event.id} to={`/dashboard/${event.id}`}>
-                <p className="eyebrow">{event.closed ? "Closed" : "Open"}</p>
+                <p className={event.closed ? "hack-state is-closed" : "hack-state"}>{event.closed ? "Closed" : "Open"}</p>
                 <h2>{event.name}</h2>
-                <p>{event.tracks.length ? event.tracks.map((track) => track.name).join(", ") : "No tracks assigned"}</p>
-                <p className="muted">{event.participants.length} participants</p>
+                <p>{event.tracks.length ? event.tracks.map((track) => track.name).join(", ") : "No tracks"}</p>
+                <p className="muted">
+                  {event.participants.length} {event.participants.length === 1 ? "project" : "projects"}
+                </p>
               </Link>
             ))}
           </div>
@@ -118,6 +112,21 @@ export function Dashboard() {
   const project = projectId ? event.participants.find((item) => item.id === projectId) : undefined;
   if (projectId) {
     if (!project) return <Empty>This project is not in your hackathon.</Empty>;
+    if (role === "judge" || role === "participant") {
+      return (
+        <div className="desk desk-reel">
+          <JudgeReel
+            event={event}
+            role={role}
+            focusId={project.id}
+            onSaved={async () => {
+              setNotice(null);
+              await reload();
+            }}
+          />
+        </div>
+      );
+    }
     return (
       <div className="desk">
         <p>
@@ -131,16 +140,6 @@ export function Dashboard() {
             {project.team}
             {project.summary ? ` · ${project.summary}` : ""}
           </p>
-          {role === "judge" ? (
-            <ScoreCard
-              participant={project}
-              onSaved={async () => {
-                setNotice(null);
-                await reload();
-              }}
-              onError={(message) => setNotice(message)}
-            />
-          ) : null}
         </article>
       </div>
     );
@@ -148,31 +147,15 @@ export function Dashboard() {
 
   if (role === "judge" || role === "participant") {
     return (
-      <div className="desk">
-        <p>
-          <Link to="/dashboard">All hackathons</Link>
-        </p>
-        <header className="event-head">
-          <div>
-            <h2>{event.name}</h2>
-            <p className="muted">{event.tracks.map((track) => track.name).join(", ")}</p>
-          </div>
-          <p className="count">{event.participants.length} projects</p>
-        </header>
-        {event.participants.length ? (
-          <div className="hack-cards">
-            {event.participants.map((item) => (
-              <Link className="hack-card" key={item.id} to={`/dashboard/${event.id}/projects/${item.id}`}>
-                <p className="eyebrow">{item.track}</p>
-                <h2>{item.title}</h2>
-                <p>{item.team}</p>
-                {role === "judge" ? <p className="muted">{item.criteria ? "Scored" : "Not scored"}</p> : null}
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <Empty>No projects in this hackathon.</Empty>
-        )}
+      <div className="desk desk-reel">
+        <JudgeReel
+          event={event}
+          role={role}
+          onSaved={async () => {
+            setNotice(null);
+            await reload();
+          }}
+        />
       </div>
     );
   }
@@ -276,65 +259,6 @@ function EventBlock({
         />
       ) : null}
     </section>
-  );
-}
-
-function ScoreCard({
-  participant,
-  onSaved,
-  onError,
-}: {
-  participant: HomeParticipant;
-  onSaved: () => Promise<void>;
-  onError: (message: string) => void;
-}) {
-  const [criteria, setCriteria] = useState<Rubric>(
-    participant.criteria ?? { functionality: 3, quality: 3, innovation: 3 },
-  );
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setCriteria(participant.criteria ?? { functionality: 3, quality: 3, innovation: 3 });
-  }, [participant]);
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    try {
-      await postScore(participant.id, criteria);
-      await onSaved();
-    } catch (err) {
-      onError(asApiError(err).message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form className="score-card" onSubmit={(event) => void save(event)}>
-      <strong>{participant.title}</strong>
-      <p className="muted">0 is broken. 3 works. 5 is exceptional.</p>
-      {RUBRIC.map(([key, label]) => (
-        <fieldset key={key}>
-          <legend>{label}</legend>
-          <div className="stars" role="group" aria-label={label}>
-            {[0, 1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                aria-pressed={criteria[key] === n}
-                onClick={() => setCriteria((current) => ({ ...current, [key]: n }))}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-      ))}
-      <button className="btn" type="submit" disabled={saving}>
-        {saving ? "Saving…" : "Commit ballot"}
-      </button>
-    </form>
   );
 }
 
