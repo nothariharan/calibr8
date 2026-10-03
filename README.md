@@ -1,5 +1,17 @@
 # calibr8
 
+## ▶ Watch the demo, then play it yourself
+
+[![Watch the demo video](https://img.shields.io/badge/▶%20Watch%20demo%20video-ff0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/WY7thYnzDIs)
+[![Open the live prototype](https://img.shields.io/badge/🚀%20Live%20prototype-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://calibr-demo-sigma.vercel.app/)
+
+| | |
+|---|---|
+| **▶ Demo video** | **[youtu.be/WY7thYnzDIs](https://youtu.be/WY7thYnzDIs)** — the whole loop on video: one project, three scores, the lean coming back out. |
+| **🚀 Live prototype** | **[calibr-demo-sigma.vercel.app](https://calibr-demo-sigma.vercel.app/)** — click and play in a browser. Pick Judge. Ballots stay in that browser. |
+
+No Docker needed for either one.
+
 ![One project. Then the judge's lean comes out.](assets/readme-hero.png)
 
 Offline hackathon judging. A judge sees one project, scores functionality, quality, and innovation, and scrolls to the next. The ranking treats each ballot as the project plus that judge's lean, then takes the lean back out.
